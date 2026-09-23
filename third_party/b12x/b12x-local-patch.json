@@ -1,0 +1,17 @@
+{
+  "base": "SG4b qualified B12x 85d3681 with local clamp fixes",
+  "roce_revision": "081b235931dbbcedcf0eb5899bae990c5dec5238",
+  "changed_files": [
+    "b12x/__init__.py",
+    "b12x/comm/__init__.py",
+    "b12x/comm/roce/__init__.py",
+    "b12x/comm/roce/_allgather_cute.py",
+    "b12x/comm/roce/_cute_intrinsics.py",
+    "b12x/comm/roce/_oneshot_cute.py",
+    "b12x/comm/roce/_proxy.py",
+    "b12x/comm/roce/_roce_proxy.c",
+    "b12x/comm/roce/api.py",
+    "b12x/comm/roce/roce_oneshot.py"
+  ],
+  "note": "Only RoCEnante files and two registry entries are added. Existing MoE kernels, compiler and utility implementations remain byte-identical to the pinned serving B12x."
+}

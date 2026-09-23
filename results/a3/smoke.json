@@ -1,0 +1,42 @@
+{
+  "arithmetic": {
+    "ok": true,
+    "content": "42"
+  },
+  "reasoning": {
+    "ok": true,
+    "reasoning_chars": 140,
+    "content": "Let me spell out \"strawberry\" and count each letter:\n\n**s - t - r - a - w - b - e - r - r - y**\n\nNow I'll count the r's:\n1. Position 3: **r** \u2713\n2. Position 8: **r** \u2713\n3. Position 9: **r** \u2713\n\nThere are"
+  },
+  "tool_call": {
+    "ok": true,
+    "tool_calls": [
+      {
+        "id": "call_4edef6e0e06d423faa83cf27",
+        "index": 0,
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "arguments": "{\"city\": \"Cardiff\"}"
+        }
+      }
+    ],
+    "finish_reason": "tool_calls"
+  },
+  "image": {
+    "ok": true,
+    "content": "The left half is **red** and the right half is **blue**."
+  },
+  "speed_code": {
+    "completion_tokens": 256,
+    "ttft_s": 0.333,
+    "decode_tok_s": 52.35,
+    "text_head": "```python\nfrom collections import OrderedDict\nfrom typing import Any, Optional\n\n\nclass LRUCache:\n    \"\"\"\n    A Least Recently Used (LRU) cache implementation.\n\n"
+  },
+  "speed_prose": {
+    "completion_tokens": 256,
+    "ttft_s": 0.275,
+    "decode_tok_s": 20.29,
+    "text_head": "The wind at Cape Alabaster had a voice, and for thirty years, Elias had learned its language. It was a low moan in the winter, a sharp shriek in the autumn gale"
+  }
+}

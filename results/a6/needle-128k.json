@@ -1,0 +1,11 @@
+{
+ "ok": true,
+ "prompt_tokens": 127803,
+ "seconds": 82.83,
+ "hits": {
+  "vault code": true,
+  "courier name": true,
+  "ship name": true
+ },
+ "answer": "vault code: 151846\ncourier name: Tamsin Okonkwo-Reyes\nship name: Halcyon Ferrule"
+}

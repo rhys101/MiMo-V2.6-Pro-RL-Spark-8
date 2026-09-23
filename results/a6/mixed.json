@@ -1,0 +1,74 @@
+{
+ "ok": true,
+ "rounds": [
+  {
+   "round": 0,
+   "long": {
+    "ok": true,
+    "seconds": 17.5,
+    "tokens": 1702
+   },
+   "short": [
+    {
+     "ok": true,
+     "seconds": 0.38
+    },
+    {
+     "ok": true,
+     "seconds": 0.56
+    },
+    {
+     "ok": true,
+     "seconds": 0.38
+    }
+   ],
+   "tool_call_ok": true
+  },
+  {
+   "round": 1,
+   "long": {
+    "ok": true,
+    "seconds": 17.17,
+    "tokens": 1702
+   },
+   "short": [
+    {
+     "ok": true,
+     "seconds": 0.38
+    },
+    {
+     "ok": true,
+     "seconds": 0.36
+    },
+    {
+     "ok": true,
+     "seconds": 0.36
+    }
+   ],
+   "tool_call_ok": true
+  },
+  {
+   "round": 2,
+   "long": {
+    "ok": true,
+    "seconds": 17.74,
+    "tokens": 1702
+   },
+   "short": [
+    {
+     "ok": true,
+     "seconds": 0.48
+    },
+    {
+     "ok": true,
+     "seconds": 0.45
+    },
+    {
+     "ok": true,
+     "seconds": 0.35
+    }
+   ],
+   "tool_call_ok": true
+  }
+ ]
+}

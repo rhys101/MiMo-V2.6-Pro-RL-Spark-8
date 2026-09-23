@@ -1,0 +1,10 @@
+{
+  "original_archive_sha256": "86bbb0427eb31c57940c8fac5a6a89c7264e16ffc6535a9a95ff399e39ca31c9",
+  "published_archive_sha256": "4922d0db9395fb8b537d7e216d509a5747867a45f20c18290e385786609dd05f",
+  "source_files": 241,
+  "all_source_bytes_match_observed_bundle": true,
+  "archive_change": "Only tar/gzip ownership, timestamps and metadata normalized for publication.",
+  "b12x_upstream": "https://github.com/local-inference-lab/b12x",
+  "roce_revision": "081b235931dbbcedcf0eb5899bae990c5dec5238",
+  "base": "SG4b qualified B12x 85d3681 with local clamp fixes"
+}

@@ -1,0 +1,36 @@
+diff --git a/python/sglang/srt/models/mimo_v2.py b/python/sglang/srt/models/mimo_v2.py
+index 41a95e4b6e..6f67bef0d5 100644
+--- a/python/sglang/srt/models/mimo_v2.py
++++ b/python/sglang/srt/models/mimo_v2.py
+@@ -1449,6 +1449,19 @@ class MiMoV2ForCausalLM(nn.Module, AudioEncoderMixin):
+         # matching the draft's extract_context_feature (offset=1).
+         self.model.layers_to_capture = [val + 1 for val in layer_ids]
+ 
++    _ROUTED_EXPERT_RE = re.compile(r"^model\.layers\.(\d+)\.mlp\.experts\.(\d+)\.")
++
++    def _is_local_routed_expert(self, name: str) -> bool:
++        m = self._ROUTED_EXPERT_RE.match(name)
++        if m is None or self.model is None:
++            return True
++        layer_id = int(m.group(1))
++        if not 0 <= layer_id < len(self.model.layers):
++            return True
++        experts = getattr(getattr(self.model.layers[layer_id], "mlp", None), "experts", None)
++        mapper = getattr(experts, "_map_global_expert_id_to_local_expert_id", None)
++        return mapper is None or mapper(int(m.group(2))) >= 0
++
+     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
+         stacked_params_mapping = [
+             # (param_name, shard_name, shard_id)
+@@ -1599,6 +1612,11 @@ class MiMoV2ForCausalLM(nn.Module, AudioEncoderMixin):
+                 continue
+ 
+             if ".mlp.experts." in name and loaded_weight.dtype == torch.uint8:
++                # Skip experts stored on other EP ranks before touching the
++                # mmap: converting the UE8M0 scales of all 384 experts on every rank
++                # scales dominated load time on 8 x DGX Spark.
++                if not self._is_local_routed_expert(name):
++                    continue
+                 if name.endswith(".weight_scale"):
+                     name = name + "_inv"
+                     loaded_weight = torch.exp2(loaded_weight.to(torch.float32) - 127.0)

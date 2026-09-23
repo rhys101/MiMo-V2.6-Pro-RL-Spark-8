@@ -1,0 +1,42 @@
+{
+  "arithmetic": {
+    "ok": true,
+    "content": "42"
+  },
+  "reasoning": {
+    "ok": true,
+    "reasoning_chars": 168,
+    "content": "Let me spell out \"strawberry\" and count each letter:\n\n**s - t - r - a - w - b - e - r - r - y**\n\nNow I'll identify each **r**:\n1. s-t-**r**-a-w-b-e-r-r-y \u2192 1st r\n2. s-t-r-a-w-b-e-**r**-r-y \u2192 2nd r\n3. "
+  },
+  "tool_call": {
+    "ok": true,
+    "tool_calls": [
+      {
+        "id": "call_38529d251a574f18b73f4417",
+        "index": 0,
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "arguments": "{\"city\": \"Cardiff\"}"
+        }
+      }
+    ],
+    "finish_reason": "tool_calls"
+  },
+  "image": {
+    "ok": true,
+    "content": "The left half is **red** and the right half is **blue**."
+  },
+  "speed_code": {
+    "completion_tokens": 256,
+    "ttft_s": 0.321,
+    "decode_tok_s": 58.31,
+    "text_head": "```python\nfrom collections import OrderedDict\nfrom typing import Any, Optional\n\n\nclass LRUCache:\n    \"\"\"\n    A Least Recently Used (LRU) cache implementation.\n\n"
+  },
+  "speed_prose": {
+    "completion_tokens": 256,
+    "ttft_s": 0.239,
+    "decode_tok_s": 23.39,
+    "text_head": "The wind at Cape Alabaster didn\u2019t howl; it screamed. It was a high, thin sound that wormed its way into the mortar of the lighthouse and the bones of its keeper"
+  }
+}

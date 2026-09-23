@@ -1,0 +1,220 @@
+diff --git a/python/sglang/srt/distributed/device_communicators/pynccl.py b/python/sglang/srt/distributed/device_communicators/pynccl.py
+index 46aef5b945..fddacd7257 100644
+--- a/python/sglang/srt/distributed/device_communicators/pynccl.py
++++ b/python/sglang/srt/distributed/device_communicators/pynccl.py
+@@ -3,7 +3,10 @@
+ # Adapted from https://github.com/vllm-project/vllm/blob/v0.6.4.post1/vllm/distributed/device_communicators/pynccl.py
+ 
+ import logging
+-from contextlib import contextmanager
++import json
++import os
++import weakref
++from contextlib import contextmanager, nullcontext
+ from typing import Optional, Union
+ 
+ # ===================== import region =====================
+@@ -27,6 +30,25 @@ from sglang.srt.utils.common import get_current_device_stream_fast
+ logger = logging.getLogger(__name__)
+ 
+ 
++_roce_runtimes = weakref.WeakSet()
++
++
++def synchronize_and_check_roce(copy_done):
++    """Finish this result before checking transport health or consuming output."""
++    if copy_done is not None:
++        copy_done.synchronize()
++    elif _roce_runtimes:
++        # Non-overlap paths have no copy event. Complete all forward streams
++        # before reading the host failure word; an early check is insufficient.
++        torch.cuda.synchronize()
++    for runtime in tuple(_roce_runtimes):
++        runtime.check_health()
++        if not getattr(runtime, "_sglang_post_result_logged", False):
++            logger.info("ROCE_POST_RESULT_HEALTH %s", json.dumps(runtime.stats()))
++            runtime._sglang_post_result_logged = True
++
++
++
+ class PyNcclCommunicator:
+     def __init__(
+         self,
+@@ -34,6 +56,7 @@ class PyNcclCommunicator:
+         device: Union[int, str, torch.device],
+         library_path: Optional[str] = None,
+         is_symmetric_memory_enabled: bool = False,
++        roce_enabled: bool = False,
+     ):
+         """
+         Args:
+@@ -60,6 +83,8 @@ class PyNcclCommunicator:
+             self.world_size = group.world_size
+ 
+         self.group = group
++        self.roce = None
++        self._roce_route_logged = False
+ 
+         # if world_size == 1, no need to create communicator
+         if self.world_size == 1:
+@@ -131,11 +156,45 @@ class PyNcclCommunicator:
+             warmup_stream.synchronize()
+             del data
+ 
++        if roce_enabled and os.environ.get("SGLANG8_ROCE_ALLREDUCE", "0") == "1":
++            if self.world_size != 8 or isinstance(group, StatelessProcessGroup):
++                raise RuntimeError("SG17 RoCEnante requires the TP8 Gloo exchange group")
++            from b12x.comm import roce
++
++            self.roce = roce.AllReduce.from_exchange_group(
++                exchange_group=group, device=self.device,
++                max_size=512 * 1024, max_gather_bytes=0,
++            )
++            self.roce.prepare((torch.bfloat16, torch.float32))
++            if len(self.roce.hca_names) != 2:
++                raise RuntimeError("SG17 RoCEnante requires two active RoCE interfaces")
++            _roce_runtimes.add(self.roce)
++            logger.info("ROCE_TP8_READY %s", json.dumps(self.roce.stats()))
++
++
+         # by default it is disabled, e.g. in profiling models and prefill phase.
+         # to use it, use under `with obj.change_state(enable=True)`, usually
+         # when we are using CUDA graph.
+         self.disabled = True
+ 
++    def roce_capture(self, stream):
++        return self.roce.capture(stream=stream) if self.roce is not None else nullcontext()
++
++    def _should_roce(self, tensor, op):
++        if self.roce is None:
++            return False
++        self.roce.check_health()
++        eligible = (
++            op == ReduceOp.SUM
++            and tensor.dtype in (torch.bfloat16, torch.float32)
++            and self.roce.should_allreduce(tensor)
++        )
++        if eligible and not self._roce_route_logged:
++            logger.info("ROCE_TP8_ROUTE rank=%d dtype=%s bytes=%d", self.rank,
++                        tensor.dtype, tensor.numel() * tensor.element_size())
++            self._roce_route_logged = True
++        return eligible
++
+     def _resolve_stream(self) -> torch.cuda.Stream:
+         """Return the current device stream used for NCCL calls."""
+         return get_current_device_stream_fast()
+@@ -151,6 +210,9 @@ class PyNcclCommunicator:
+             f"but the input tensor is on {tensor.device}"
+         )
+         stream = self._resolve_stream()
++        if self._should_roce(tensor, op):
++            self.roce.all_reduce(tensor, out=tensor, stream=stream)
++            return
+         self.nccl.ncclAllReduce(
+             buffer_type(tensor.data_ptr()),
+             buffer_type(tensor.data_ptr()),
+@@ -178,6 +240,8 @@ class PyNcclCommunicator:
+             out_tensor = torch.empty_like(in_tensor)
+ 
+         stream = self._resolve_stream()
++        if self._should_roce(in_tensor, op):
++            return self.roce.all_reduce(in_tensor, out=out_tensor, stream=stream)
+         self.nccl.ncclAllReduce(
+             buffer_type(in_tensor.data_ptr()),  # sendbuff
+             buffer_type(out_tensor.data_ptr()),  # recvbuff - DIFFERENT pointer
+diff --git a/python/sglang/srt/distributed/parallel_state.py b/python/sglang/srt/distributed/parallel_state.py
+index e7bcc1d88e..efaef0215c 100644
+--- a/python/sglang/srt/distributed/parallel_state.py
++++ b/python/sglang/srt/distributed/parallel_state.py
+@@ -468,6 +468,7 @@ class GroupCoordinator:
+                 group=self.cpu_group,
+                 device=self.device,
+                 is_symmetric_memory_enabled=self.is_symmetric_memory_enabled(),
++                roce_enabled=(group_name == "tp"),
+             )
+ 
+         self.pymscclpp_comm: Optional[PyMscclppCommunicator] = None
+@@ -654,7 +655,10 @@ class GroupCoordinator:
+                 maybe_pymscclpp_context = nullcontext()
+             else:
+                 maybe_pymscclpp_context = pymscclpp_comm.change_state(enable=True)
+-            with maybe_pynccl_context, maybe_pymscclpp_context:
++            maybe_roce_context = (
++                pynccl_comm.roce_capture(stream) if pynccl_comm else nullcontext()
++            )
++            with maybe_pynccl_context, maybe_pymscclpp_context, maybe_roce_context:
+                 yield graph_capture_context
+ 
+     def all_reduce(self, input_: torch.Tensor) -> torch.Tensor:
+@@ -2059,6 +2063,8 @@ class GroupCoordinator:
+             torch.distributed.destroy_process_group(self.cpu_group)
+             self.cpu_group = None
+         if self.pynccl_comm is not None:
++            if self.pynccl_comm.roce is not None:
++                self.pynccl_comm.roce.close()
+             self.pynccl_comm = None
+         if self.pymscclpp_comm is not None:
+             self.pymscclpp_comm.destroy()
+diff --git a/python/sglang/srt/managers/scheduler_components/batch_result_processor.py b/python/sglang/srt/managers/scheduler_components/batch_result_processor.py
+index 7ce4572f59..86fc4e0508 100644
+--- a/python/sglang/srt/managers/scheduler_components/batch_result_processor.py
++++ b/python/sglang/srt/managers/scheduler_components/batch_result_processor.py
+@@ -14,6 +14,8 @@ from typing import (
+ 
+ import torch
+ 
++from sglang.srt.distributed.device_communicators.pynccl import synchronize_and_check_roce
++
+ from sglang.srt.disaggregation.utils import DisaggregationMode
+ from sglang.srt.environ import envs
+ from sglang.srt.layers.logits_processor import (
+@@ -263,8 +265,7 @@ class SchedulerBatchResultProcessor:
+         self.token_to_kv_pool_allocator.free_group_begin()
+ 
+         if self.is_generation:
+-            if result.copy_done is not None:
+-                result.copy_done.synchronize()
++            synchronize_and_check_roce(result.copy_done)
+             auxiliary_output_starts = self.snapshot_auxiliary_output_starts(
+                 batch, result
+             )
+@@ -441,8 +442,7 @@ class SchedulerBatchResultProcessor:
+                 )
+ 
+         else:  # embedding or reward model
+-            if result.copy_done is not None:
+-                result.copy_done.synchronize()
++            synchronize_and_check_roce(result.copy_done)
+ 
+             embeddings = self._convert_embeddings(result=result)
+             phs = result.pooled_hidden_states
+@@ -868,8 +868,7 @@ class SchedulerBatchResultProcessor:
+         is_decode = batch.forward_mode.is_decode()
+         if not (is_decode or batch.forward_mode.is_extend()):
+             return
+-        if result.copy_done is not None:
+-            result.copy_done.synchronize()
++        synchronize_and_check_roce(result.copy_done)
+         next_token_ids = result.next_token_ids.tolist()
+ 
+         if not is_decode:
+@@ -911,8 +910,7 @@ class SchedulerBatchResultProcessor:
+         batch: ScheduleBatch,
+         result: GenerationBatchResult,
+     ):
+-        if result.copy_done is not None:
+-            result.copy_done.synchronize()
++        synchronize_and_check_roce(result.copy_done)
+ 
+         self.output_streamer._stream_output_generation(
+             batch.reqs, batch.return_logprob, is_idle_batch=True
+@@ -923,8 +921,7 @@ class SchedulerBatchResultProcessor:
+         batch: ScheduleBatch,
+         result: GenerationBatchResult,
+     ):
+-        if result.copy_done is not None:
+-            result.copy_done.synchronize()
++        synchronize_and_check_roce(result.copy_done)
+         auxiliary_output_starts = self.snapshot_auxiliary_output_starts(batch, result)
+         auxiliary_output = result.auxiliary_host_output
+         if result.routed_experts_output is not None:

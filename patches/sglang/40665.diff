@@ -1,0 +1,1125 @@
+diff --git a/docs/docs/advanced_features/server_arguments.mdx b/docs/docs/advanced_features/server_arguments.mdx
+index 608fe3166bfb..14bb5a3552fe 100644
+--- a/docs/docs/advanced_features/server_arguments.mdx
++++ b/docs/docs/advanced_features/server_arguments.mdx
+@@ -1648,6 +1648,12 @@ Combining `--enable-response-store` with `--disaggregation-mode=prefill` or `dec
+       <td style={{padding: "9px 12px", backgroundColor: "rgba(255,255,255,0.02)"}}>`None`</td>
+       <td style={{padding: "9px 12px", backgroundColor: "rgba(255,255,255,0.05)"}}>Type: int</td>
+     </tr>
++    <tr>
++      <td style={{padding: "9px 12px", fontWeight: 500, backgroundColor: "rgba(255,255,255,0.02)"}}>`--speculative-draft-kv-ratio`</td>
++      <td style={{padding: "9px 12px", backgroundColor: "rgba(255,255,255,0.05)"}}>The draft KV pool as a fraction of the target's token capacity. At 1.0 the draft holds one slot per target token. Below 1.0 the draft's KV lives in a sliding-window pool. Requires DFLASH, `--speculative-draft-window-size`, and a draft whose every layer is sliding_attention, and is not supported yet on targets with sliding-window layers of their own.</td>
++      <td style={{padding: "9px 12px", backgroundColor: "rgba(255,255,255,0.02)"}}>`1.0`</td>
++      <td style={{padding: "9px 12px", backgroundColor: "rgba(255,255,255,0.05)"}}>Type: float</td>
++    </tr>
+ </tbody>
+ </table>
+ 
+diff --git a/docs/docs/advanced_features/speculative_decoding.mdx b/docs/docs/advanced_features/speculative_decoding.mdx
+index 004e9ef75b81..ad67d65ac1b0 100644
+--- a/docs/docs/advanced_features/speculative_decoding.mdx
++++ b/docs/docs/advanced_features/speculative_decoding.mdx
+@@ -565,6 +565,11 @@ Relevant parameters:
+       <td style={{padding: "9px 12px", backgroundColor: "rgba(255,255,255,0.05)"}}>Draft KV sliding-window size. Must be <code>&gt;= speculative-num-draft-tokens</code> when set.</td>
+       <td style={{padding: "9px 12px", backgroundColor: "rgba(255,255,255,0.02)"}}><code>None</code></td>
+     </tr>
++    <tr>
++      <td style={{padding: "9px 12px", fontWeight: 500, backgroundColor: "rgba(255,255,255,0.02)"}}><code>--speculative-draft-kv-ratio</code></td>
++      <td style={{padding: "9px 12px", backgroundColor: "rgba(255,255,255,0.05)"}}>The draft KV pool as a fraction of the target's token capacity. Below 1.0 the draft's KV lives in a sliding-window pool and needs an all-SWA draft. Not supported yet on targets with sliding-window layers of their own.</td>
++      <td style={{padding: "9px 12px", backgroundColor: "rgba(255,255,255,0.02)"}}><code>1.0</code></td>
++    </tr>
+   </tbody>
+ </table>
+ 
+diff --git a/python/sglang/srt/arg_groups/field_order.py b/python/sglang/srt/arg_groups/field_order.py
+index 6b104eb4affb..930d47589b2e 100644
+--- a/python/sglang/srt/arg_groups/field_order.py
++++ b/python/sglang/srt/arg_groups/field_order.py
+@@ -287,6 +287,7 @@
+     "speculative_dsa_topk_backend",
+     "speculative_draft_kv_cache_dtype",
+     "speculative_draft_window_size",
++    "speculative_draft_kv_ratio",
+     "speculative_moe_runner_backend",
+     "speculative_moe_a2a_backend",
+     "speculative_draft_model_quantization",
+diff --git a/python/sglang/srt/arg_groups/fields/spec.py b/python/sglang/srt/arg_groups/fields/spec.py
+index 5ae41ce085ed..e6ba4337d864 100644
+--- a/python/sglang/srt/arg_groups/fields/spec.py
++++ b/python/sglang/srt/arg_groups/fields/spec.py
+@@ -166,6 +166,10 @@ class Spec(msgspec.Struct):
+         Optional[int],
+         "Number of leading 'attention sink' tokens the draft always attends to, in addition to the --speculative-draft-window-size recent window (StreamingLLM-style). Honored only by the built-in EAGLE/MTP draft-decode path on the Triton and FlashInfer draft backends; the Llama EAGLE-3 and DFLASH windows ignore it. 0/unset => pure recent window. Requires --speculative-draft-window-size.",
+     ] = None
++    speculative_draft_kv_ratio: A[
++        float,
++        "The draft KV pool as a fraction of the target's token capacity. It should be between 0 and 1. At 1.0 (the default) the draft holds one slot per target token. Below 1.0 the draft's KV lives in a sliding-window pool whose out-of-window slots are freed and whose cached prefixes stay reusable while their trailing window survives. Requires DFLASH, --speculative-draft-window-size, and a draft whose every layer is sliding_attention, and is not supported yet on targets with sliding-window layers of their own. The pool must still cover the running requests, or startup fails with the smallest usable ratio.",
++    ] = 1.0
+     speculative_moe_runner_backend: A[
+         Optional[str],
+         Arg(
+diff --git a/python/sglang/srt/arg_groups/speculative_hook.py b/python/sglang/srt/arg_groups/speculative_hook.py
+index 5afef4f83223..e50340a22862 100644
+--- a/python/sglang/srt/arg_groups/speculative_hook.py
++++ b/python/sglang/srt/arg_groups/speculative_hook.py
+@@ -388,6 +388,16 @@ def _handle_dflash(server_args: ServerArgs) -> None:
+                 f"window_size={cfg.speculative_draft_window_size}, block_size={draft_tokens}."
+             )
+ 
++    ratio = cfg.speculative_draft_kv_ratio
++    if not 0 < ratio <= 1:
++        raise ValueError(
++            "--speculative-draft-kv-ratio must be in (0, 1], got "
++            f"{ratio}. Above 1 the draft would hold slots the target cannot "
++            "address."
++        )
++    if ratio < 1:
++        _validate_dflash_draft_kv_ratio(server_args)
++
+     _resolve_dflash_draft_attention_backend(server_args)
+ 
+     if cfg.max_running_requests is None:
+@@ -401,6 +411,53 @@ def _handle_dflash(server_args: ServerArgs) -> None:
+         )
+ 
+ 
++def _validate_dflash_draft_kv_ratio(server_args: ServerArgs) -> None:
++    """We free a request's draft slots as they leave the window, so every draft
++    layer must be sliding-window attention."""
++    cfg = resolving_view(server_args)
++    if cfg.speculative_draft_window_size is None:
++        raise ValueError(
++            "--speculative-draft-kv-ratio below 1 requires "
++            "--speculative-draft-window-size."
++        )
++    if not cfg.device.startswith("cuda"):
++        raise ValueError(
++            "--speculative-draft-kv-ratio below 1 is only supported on CUDA."
++        )
++    unsupported = [
++        flag
++        for flag, enabled in (
++            ("--enable-hierarchical-cache", cfg.enable_hierarchical_cache),
++            ("--enable-unified-memory", cfg.enable_unified_memory),
++            ("--enable-hisparse", cfg.enable_hisparse),
++            ("--disaggregation-mode", cfg.disaggregation_mode != "null"),
++            ("--dcp-size", cfg.dcp_size > 1),
++        )
++        if enabled
++    ]
++    if unsupported:
++        raise ValueError(
++            "--speculative-draft-kv-ratio below 1 does not support "
++            f"{', '.join(unsupported)}."
++        )
++
++    from sglang.srt.speculative.dflash_utils import get_dflash_layer_types
++    from sglang.srt.utils.hf_transformers_utils import get_config
++
++    draft_hf_config = get_config(
++        cfg.speculative_draft_model_path,
++        trust_remote_code=cfg.trust_remote_code,
++        revision=cfg.speculative_draft_model_revision,
++        model_override_args=json.loads(cfg.json_model_override_args),
++    )
++    layer_types = get_dflash_layer_types(draft_hf_config)
++    if not layer_types or any(t != "sliding_attention" for t in layer_types):
++        raise ValueError(
++            "--speculative-draft-kv-ratio below 1 requires every draft layer to "
++            f"be sliding_attention, got layer_types={layer_types}."
++        )
++
++
+ def _handle_uno(server_args: ServerArgs) -> None:
+     cfg = resolving_view(server_args)
+ 
+diff --git a/python/sglang/srt/mem_cache/allocator/swa.py b/python/sglang/srt/mem_cache/allocator/swa.py
+index cee82b123606..9ebb23f9815b 100644
+--- a/python/sglang/srt/mem_cache/allocator/swa.py
++++ b/python/sglang/srt/mem_cache/allocator/swa.py
+@@ -1,4 +1,5 @@
+ import logging
++from typing import Optional
+ 
+ import torch
+ 
+@@ -7,6 +8,7 @@
+ from sglang.srt.mem_cache.allocator.paged import PagedTokenToKVPoolAllocator
+ from sglang.srt.mem_cache.allocator.token import TokenToKVPoolAllocator
+ from sglang.srt.mem_cache.base_swa_memory_pool import BaseSWAKVPool
++from sglang.srt.mem_cache.memory_pool import KVCache
+ from sglang.srt.utils import is_npu
+ from sglang.srt.utils.common import get_num_new_pages
+ from sglang.srt.utils.invariants import Bucket, Invariant, IsTrue, expect
+@@ -866,3 +868,82 @@ def clear(self):
+ 
+ def is_swa_req_ring(allocator) -> bool:
+     return isinstance(allocator, SWATokenToKVPoolAllocator) and allocator.swa_req_ring
++
++
++class _DraftSWAKVPoolBinding(BaseSWAKVPool):
++    """The target's pool with a speculative draft's pool as the SWA side.
++
++    The draft runner builds its pool after the target allocator, so the SWA side
++    starts out None and takes the mapping when it is attached.
++    """
++
++    swa_req_ring_size = None
++
++    def __init__(self, full_kv_pool: KVCache):
++        self.full_kv_pool = full_kv_pool
++        self.swa_kv_pool: Optional[BaseSWAKVPool] = None
++        self.full_to_swa_index_mapping: Optional[torch.Tensor] = None
++
++    def attach_swa_kv_pool(self, swa_kv_pool: BaseSWAKVPool) -> None:
++        self.swa_kv_pool = swa_kv_pool
++        swa_kv_pool.register_mapping(self.full_to_swa_index_mapping)
++
++    def register_mapping(self, full_to_swa_index_mapping: torch.Tensor) -> None:
++        self.full_to_swa_index_mapping = full_to_swa_index_mapping
++        if self.swa_kv_pool is not None:
++            self.swa_kv_pool.register_mapping(full_to_swa_index_mapping)
++
++    def translate_loc_from_full_to_swa(self, kv_indices: torch.Tensor) -> torch.Tensor:
++        return self.full_to_swa_index_mapping[kv_indices]
++
++    def get_state_buf_infos(self):
++        return self.swa_kv_pool.get_contiguous_buf_infos()
++
++    def get_key_buffer(self, layer_id: int):
++        return self.full_kv_pool.get_key_buffer(layer_id)
++
++    def get_value_buffer(self, layer_id: int):
++        return self.full_kv_pool.get_value_buffer(layer_id)
++
++    def get_kv_buffer(self, layer_id: int):
++        return self.full_kv_pool.get_kv_buffer(layer_id)
++
++    def set_kv_buffer(self, *args, **kwargs):
++        return self.full_kv_pool.set_kv_buffer(*args, **kwargs)
++
++
++class DraftSWATokenToKVPoolAllocator(SWATokenToKVPoolAllocator):
++    """Target allocator whose SWA side is a bounded speculative draft KV pool.
++
++    Every target layer is full attention. The SWA slot handed out with each
++    target slot indexes the draft pool.
++    """
++
++    def __init__(
++        self,
++        size: int,
++        size_swa: int,
++        page_size: int,
++        dtype: torch.dtype,
++        device: str,
++        kvcache: KVCache,
++        need_sort: bool,
++        req_to_token_pool=None,
++    ):
++        super().__init__(
++            size,
++            size_swa,
++            page_size,
++            dtype,
++            device,
++            _DraftSWAKVPoolBinding(kvcache),
++            need_sort,
++            req_to_token_pool=req_to_token_pool,
++        )
++
++    def attach_draft_kv_pool(self, draft_kv_pool: BaseSWAKVPool) -> None:
++        self._kvcache.attach_swa_kv_pool(draft_kv_pool)
++
++    def get_kvcache(self):
++        # Backends check this to detect a hybrid-SWA target.
++        return self._kvcache.full_kv_pool
+diff --git a/python/sglang/srt/mem_cache/kv_cache_builder.py b/python/sglang/srt/mem_cache/kv_cache_builder.py
+index f403e7cd43b6..42ac470a94dd 100644
+--- a/python/sglang/srt/mem_cache/kv_cache_builder.py
++++ b/python/sglang/srt/mem_cache/kv_cache_builder.py
+@@ -55,6 +55,7 @@ class KVCacheBuildResult:
+     get_memory,
+     get_parallel,
+     get_schedule,
++    get_spec,
+ )
+ from sglang.srt.speculative.base_spec_worker import HiCacheDraftMode
+ from sglang.srt.utils import is_hip
+@@ -277,16 +278,26 @@ def build_kv_cache(
+ 
+     # Hybrid memory pool
+     token_to_kv_pool = tp_worker.model_runner.token_to_kv_pool
+-    is_hybrid_swa = tp_worker.is_hybrid_swa and (
+-        not isinstance(token_to_kv_pool, DeepSeekV4TokenToKVPool)
+-        or token_to_kv_pool.needs_paged_swa_allocator
++    # The bounded draft's KV lives on the SWA side of the allocator, so the
++    # cache maintains it like a hybrid-SWA pool.
++    bounded_draft_kv = tp_worker.model_runner.draft_kv_ratio < 1
++    is_hybrid_swa = bounded_draft_kv or (
++        tp_worker.is_hybrid_swa
++        and (
++            not isinstance(token_to_kv_pool, DeepSeekV4TokenToKVPool)
++            or token_to_kv_pool.needs_paged_swa_allocator
++        )
+     )
+     is_hybrid_ssm = uses_ssm_state(tp_worker.model_runner.model_config)
+     is_dsa = is_deepseek_dsa(model_config.hf_config)
+ 
+     sliding_window_size = None
+     if is_hybrid_swa:
+-        sliding_window_size = tp_worker.sliding_window_size
++        sliding_window_size = (
++            get_spec().speculative_draft_window_size
++            if bounded_draft_kv
++            else tp_worker.sliding_window_size
++        )
+         full_tokens_per_layer, swa_tokens_per_layer = (
+             tp_worker.get_tokens_per_layer_info()
+         )
+diff --git a/python/sglang/srt/mem_cache/kv_cache_configurator.py b/python/sglang/srt/mem_cache/kv_cache_configurator.py
+index 97382225b680..08d434955ca8 100644
+--- a/python/sglang/srt/mem_cache/kv_cache_configurator.py
++++ b/python/sglang/srt/mem_cache/kv_cache_configurator.py
+@@ -45,6 +45,7 @@
+     HiSparseTokenToKVPoolAllocator,
+ )
+ from sglang.srt.mem_cache.allocator.swa import (
++    DraftSWATokenToKVPoolAllocator,
+     PureSWATokenToKVPoolAllocator,
+     SWATokenToKVPoolAllocator,
+     is_swa_req_ring,
+@@ -289,10 +290,31 @@ class KVCacheConfigurator:
+     hybrid_kda_config: Optional[Any] = field(init=False)
+     is_hybrid_swa_mtp_draft: bool = field(init=False)
+     draft_swa_full_capacity: bool = field(init=False)
++    draft_kv_ratio: float = field(init=False)
+ 
+     def __post_init__(self) -> None:
+         self.mambaish_config = mambaish_config(self.model_config)
+         self.hybrid_gdn_config = hybrid_gdn_config(self.model_config)
++        # Below 1 the draft's KV moves to the SWA side of the target allocator.
++        if self.is_draft_worker:
++            self.draft_kv_ratio = (
++                get_spec().speculative_draft_kv_ratio
++                if isinstance(
++                    self.token_to_kv_pool_allocator, DraftSWATokenToKVPoolAllocator
++                )
++                else 1.0
++            )
++        else:
++            self.draft_kv_ratio = (
++                get_spec().speculative_draft_kv_ratio
++                if self.spec_algorithm.is_dflash_family()
++                else 1.0
++            )
++            if self.draft_kv_ratio < 1 and self.is_hybrid_swa:
++                raise ValueError(
++                    "--speculative-draft-kv-ratio below 1 is not supported yet "
++                    "on a target with sliding-window layers."
++                )
+         self.hybrid_kda_config = hybrid_kda_config(self.model_config)
+         self.is_hybrid_swa_mtp_draft = (
+             self.is_draft_worker
+@@ -419,7 +441,7 @@ def _derive_pool_sizes(self, *, config: MemoryPoolConfig) -> _PoolSizes:
+         max_running_requests = config.max_running_requests
+         full_max_total_num_tokens = None
+         swa_max_total_num_tokens = None
+-        if self.is_hybrid_swa:
++        if self.is_hybrid_swa or self.draft_kv_ratio < 1:
+             full_max_total_num_tokens = config.full_max_total_num_tokens
+             swa_max_total_num_tokens = config.swa_max_total_num_tokens
+ 
+@@ -1302,6 +1324,12 @@ def _build_token_to_kv_pool(
+                     swa_max_total_num_tokens=sizes.swa_max_total_num_tokens,
+                     mha_pool_class=mha_pool_class,
+                 )
++            elif self.is_draft_worker and self.draft_kv_ratio < 1:
++                token_to_kv_pool = self._build_draft_swa_kv_pool(
++                    full_max_total_num_tokens=sizes.full_max_total_num_tokens,
++                    swa_max_total_num_tokens=sizes.swa_max_total_num_tokens,
++                    mha_pool_class=mha_pool_class,
++                )
+             elif is_minimax_sparse(self.model_config.hf_config):
+                 token_to_kv_pool = self._build_minimax_sparse_kv_pool(
+                     max_total_num_tokens=sizes.max_total_num_tokens,
+@@ -1827,6 +1855,38 @@ def _build_hybrid_swa_kv_pool(
+         )
+         return token_to_kv_pool
+ 
++    def _build_draft_swa_kv_pool(
++        self,
++        *,
++        full_max_total_num_tokens: int,
++        swa_max_total_num_tokens: int,
++        mha_pool_class: type,
++    ) -> KVCache:
++        """Draft pool addressed through the target allocator's full->SWA mapping.
++
++        Every draft layer sits on the SWA side. The full side holds no layers
++        and only spans the target's token space.
++        """
++        return SWAKVPool(
++            size=full_max_total_num_tokens,
++            size_swa=swa_max_total_num_tokens,
++            page_size=self.pool_page_size,
++            dtype=self.kv_cache_dtype,
++            post_capture_active=self.post_capture_kv_active,
++            head_num=self.model_config.get_num_kv_heads(
++                get_parallel().attn_tp_size, get_parallel().attn_dcp_size
++            ),
++            head_dim=self.model_config.head_dim,
++            v_head_dim=self.model_config.v_head_dim,
++            swa_attention_layer_ids=list(
++                range(self.layer_info.start_layer, self.layer_info.end_layer)
++            ),
++            full_attention_layer_ids=[],
++            device=self.device,
++            enable_kv_cache_copy=True,
++            token_to_kv_pool_class=mha_pool_class,
++        )
++
+     def _build_minimax_sparse_kv_pool(self, *, max_total_num_tokens: int) -> KVCache:
+         from sglang.srt.server_args import m3_fp8_attn_gemm_enabled
+ 
+@@ -2114,6 +2174,17 @@ def _build_token_to_kv_pool_allocator(
+                         need_sort=need_sort,
+                         req_to_token_pool=req_to_token_pool,
+                     )
++                elif self.draft_kv_ratio < 1:
++                    token_to_kv_pool_allocator = DraftSWATokenToKVPoolAllocator(
++                        sizes.full_max_total_num_tokens,
++                        sizes.swa_max_total_num_tokens,
++                        page_size=get_schedule().page_size,
++                        dtype=self.kv_cache_dtype,
++                        device=self.device,
++                        kvcache=token_to_kv_pool,
++                        need_sort=need_sort,
++                        req_to_token_pool=req_to_token_pool,
++                    )
+                 else:
+                     if get_memory().enable_hisparse:
+                         from sglang.srt.mem_cache.sparsity import (
+@@ -2199,6 +2270,8 @@ def _build_token_to_kv_pool_allocator(
+                     token_to_kv_pool.register_mapping(
+                         swa_allocator.full_to_swa_index_mapping
+                     )
++            elif self.draft_kv_ratio < 1:
++                token_to_kv_pool_allocator.attach_draft_kv_pool(token_to_kv_pool)
+         return token_to_kv_pool_allocator
+ 
+     def _profile_available_bytes(self, pre_model_load_memory: int) -> int:
+diff --git a/python/sglang/srt/mem_cache/swa_memory_pool.py b/python/sglang/srt/mem_cache/swa_memory_pool.py
+index 1206168478dd..0efdb69b3e91 100644
+--- a/python/sglang/srt/mem_cache/swa_memory_pool.py
++++ b/python/sglang/srt/mem_cache/swa_memory_pool.py
+@@ -277,6 +277,33 @@ def set_kv_buffer(
+                 layer_id_override=layer_id_pool,
+             )
+ 
++    def set_kv_buffer_prefix_valid(
++        self,
++        layer: RadixAttention,
++        loc_info,
++        commit_lens: torch.Tensor,
++        cache_k: torch.Tensor,
++        cache_v: torch.Tensor,
++        k_scale: Optional[float] = None,
++        v_scale: Optional[float] = None,
++    ):
++        loc_2d, swa_loc_2d, _ = unwrap_write_loc(loc_info)
++        layer_id_pool, is_swa_layer = self.layers_mapping[layer.layer_id]
++        pool = self.swa_kv_pool if is_swa_layer else self.full_kv_pool
++        if is_swa_layer:
++            assert swa_loc_2d is not None
++            loc_2d = swa_loc_2d
++        pool.set_kv_buffer_prefix_valid(
++            None,
++            loc_2d,
++            commit_lens,
++            cache_k,
++            cache_v,
++            k_scale,
++            v_scale,
++            layer_id_override=layer_id_pool,
++        )
++
+     def set_mla_kv_buffer(
+         self,
+         layer: RadixAttention,
+diff --git a/python/sglang/srt/model_executor/model_runner.py b/python/sglang/srt/model_executor/model_runner.py
+index 9f7a69c7b87f..423b5b1a6bb9 100644
+--- a/python/sglang/srt/model_executor/model_runner.py
++++ b/python/sglang/srt/model_executor/model_runner.py
+@@ -369,6 +369,9 @@ def __init__(
+         self.mtp_draft_device_pools = ()
+         self.is_hybrid_swa = model_config.is_hybrid_swa
+         self.is_hybrid_swa_compress = model_config.is_hybrid_swa_compress
++        # Below 1 the DFLASH draft's KV is the SWA side of the allocator.
++        # See KVCacheConfigurator.draft_kv_ratio.
++        self.draft_kv_ratio = 1.0
+         self.use_mla_backend = self.model_config.attention_arch == AttentionArch.MLA
+         self.attention_chunk_size = model_config.attention_chunk_size
+         self.enable_elastic_ep = get_exec().moe.elastic_ep_backend is not None
+@@ -907,7 +910,8 @@ def alloc_memory_pool(self, memory_pool_config: Optional[MemoryPoolConfig] = Non
+         self.token_to_kv_pool = result.token_to_kv_pool
+         self.token_to_kv_pool_allocator = result.token_to_kv_pool_allocator
+         self.memory_pool_config = result.memory_pool_config
+-        if self.is_hybrid_swa:
++        self.draft_kv_ratio = self.kv_cache_configurator.draft_kv_ratio
++        if self.is_hybrid_swa or self.draft_kv_ratio < 1:
+             self.full_max_total_num_tokens = result.full_max_total_num_tokens
+             self.swa_max_total_num_tokens = result.swa_max_total_num_tokens
+         # Keep a reference so the shared byte buffer is not GC'd.
+diff --git a/python/sglang/srt/model_executor/pool_configurator.py b/python/sglang/srt/model_executor/pool_configurator.py
+index 49304cb48e14..9ee9c058281d 100644
+--- a/python/sglang/srt/model_executor/pool_configurator.py
++++ b/python/sglang/srt/model_executor/pool_configurator.py
+@@ -15,7 +15,7 @@
+ 
+ import logging
+ from bisect import bisect_right
+-from dataclasses import dataclass
++from dataclasses import dataclass, replace
+ from typing import TYPE_CHECKING, Optional
+ 
+ import torch
+@@ -119,6 +119,12 @@ def _dflash_draft_cell_size(kvc: KVCacheConfigurator) -> int:
+     return int(cell_size) * get_parallel().attn_dcp_size
+ 
+ 
++def _draft_swa_cell_size(kvc: KVCacheConfigurator) -> int:
++    """Bytes/token of the draft KV pool at ``draft_kv_ratio`` slots per target
++    token, floored at 1 byte for ratios that truncate to 0."""
++    return max(1, int(_dflash_draft_cell_size(kvc) * kvc.draft_kv_ratio))
++
++
+ def _get_dsa_cache_layer_ids(kvc: KVCacheConfigurator, num_layers: int) -> list[int]:
+     """Global layer ids represented by the local DSA pool's dense layer slots."""
+     if kvc.mambaish_config and not kvc.is_draft_worker:
+@@ -285,12 +291,15 @@ def __init__(self, kvc: KVCacheConfigurator):
+                 and int(draft_num_layers) > 0
+                 and int(num_layers) > 0
+             ):
++                draft_cell_size = _dflash_draft_cell_size(kvc) or None
++                if draft_cell_size is not None and kvc.draft_kv_ratio < 1:
++                    draft_cell_size = _draft_swa_cell_size(kvc)
+                 self._cell_size = scale_kv_cell_size_per_token_for_dflash(
+                     target_cell_size_per_token=self._cell_size,
+                     target_num_layers=int(num_layers),
+                     draft_num_layers=int(draft_num_layers)
+                     * get_parallel().attn_dcp_size,
+-                    draft_cell_size_per_token=_dflash_draft_cell_size(kvc) or None,
++                    draft_cell_size_per_token=draft_cell_size,
+                 )
+ 
+     def _compute_cell_size(self, kvc: KVCacheConfigurator, num_layers: int) -> int:
+@@ -937,6 +946,94 @@ def calculate_pool_sizes_from_max_tokens(
+         )
+ 
+ 
++class DFlashDraftSWAPoolConfigurator(DefaultPoolConfigurator):
++    """Sizes the draft KV pool at ``draft_kv_ratio`` slots per target token."""
++
++    def __init__(self, kvc: KVCacheConfigurator):
++        super().__init__(kvc)
++        self._draft_kv_ratio = kvc.draft_kv_ratio
++        self._page_size = kvc.page_size
++        self._window = get_spec().speculative_draft_window_size
++        self._draft_cell_size = _dflash_draft_cell_size(kvc)
++        if self._draft_cell_size <= 0:
++            # _dflash_draft_cell_size is 0 when the draft config could not be
++            # read, and the layer-count fallback below ignores the ratio.
++            raise ValueError(
++                "--speculative-draft-kv-ratio below 1 needs the "
++                "DFLASH draft's KV bytes/token, which could not be resolved "
++                "from the draft config (see the earlier warning)."
++            )
++        self._target_cell_size = self._cell_size - _draft_swa_cell_size(kvc)
++        self._draft_cap = compute_swa_request_cap(
++            page_size=kvc.page_size,
++            window=self._window,
++            attn_dp_size=kvc.attn_dp_size,
++        )
++        # A mamba target resumes a hit at the last tracked state, up to
++        # mamba_track_interval before the request end, and a cached prefix keeps
++        # its window back from there.
++        self._cached_prefix_cost = self._window + kvc.page_size
++        if mambaish_config(kvc.model_config) is not None:
++            self._cached_prefix_cost += get_exec().mamba.mamba_track_interval
++
++    def _with_draft_pool(
++        self, config: MemoryPoolConfig, min_ratio: float
++    ) -> MemoryPoolConfig:
++        target_tokens = config.max_total_num_tokens
++        draft_tokens = (
++            int(target_tokens * self._draft_kv_ratio) // self._page_size
++        ) * self._page_size
++        if draft_tokens < self._draft_cap:
++            raise RuntimeError(
++                f"--speculative-draft-kv-ratio {self._draft_kv_ratio} gives the "
++                f"draft {draft_tokens} slots, below the {self._draft_cap} its "
++                f"running requests need. Use at least {min_ratio}, or lower "
++                f"--max-running-requests or SGLANG_SWA_EVICTION_INTERVAL."
++            )
++        logger.info(
++            f"DFLASH draft KV pool: window={self._window}, "
++            f"ratio={self._draft_kv_ratio}, tokens={draft_tokens} "
++            f"(request cap {self._draft_cap}, "
++            f"{(draft_tokens - self._draft_cap) // self._cached_prefix_cost} "
++            f"cached prefixes at max concurrency)"
++        )
++        return replace(
++            config,
++            full_max_total_num_tokens=target_tokens,
++            swa_max_total_num_tokens=draft_tokens,
++        )
++
++    def calculate_pool_sizes(
++        self, available_bytes: int, page_size: int
++    ) -> MemoryPoolConfig:
++        config = super().calculate_pool_sizes(available_bytes, page_size)
++        # budget = target_tokens * (target_cell + ratio * draft_cell), so the
++        # smallest ratio covering the cap is
++        # cap * target_cell / (budget - cap * draft_cell).
++        budget = config.max_total_num_tokens * self._cell_size
++        return self._with_draft_pool(
++            config,
++            ceil_div(
++                self._draft_cap * self._target_cell_size * 1000,
++                max(1, budget - self._draft_cap * self._draft_cell_size),
++            )
++            / 1000,
++        )
++
++    def calculate_pool_sizes_from_max_tokens(
++        self, max_total_num_tokens: int, page_size: int
++    ) -> MemoryPoolConfig:
++        config = super().calculate_pool_sizes_from_max_tokens(
++            max_total_num_tokens, page_size
++        )
++        # A token cap fixes the target pool, so the ratio alone sets the draft's.
++        return self._with_draft_pool(
++            config,
++            ceil_div(self._draft_cap * 1000, max(1, config.max_total_num_tokens))
++            / 1000,
++        )
++
++
+ # Used when --swa-full-tokens-ratio is at its default and cap mode is unusable.
+ DSV4_DEFAULT_SWA_FULL_TOKENS_RATIO = 0.1
+ 
+@@ -1539,5 +1636,9 @@ def create_memory_pool_configurator(
+         if SWAChunkCapPoolConfigurator.is_applicable(kvc):
+             return SWAChunkCapPoolConfigurator(kvc)
+         return HybridSWAPoolConfigurator(kvc)
++    # Future: targets with sliding-window layers of their own, which need a
++    # second sliding-window component for the draft.
++    if kvc.draft_kv_ratio < 1:
++        return DFlashDraftSWAPoolConfigurator(kvc)
+     # Future: MambaPoolConfigurator
+     return DefaultPoolConfigurator(kvc)
+diff --git a/python/sglang/srt/speculative/dflash_worker_v2.py b/python/sglang/srt/speculative/dflash_worker_v2.py
+index c55007f3df14..bb757c07be59 100644
+--- a/python/sglang/srt/speculative/dflash_worker_v2.py
++++ b/python/sglang/srt/speculative/dflash_worker_v2.py
+@@ -25,6 +25,8 @@
+ from sglang.srt.managers.schedule_batch import ScheduleBatch
+ from sglang.srt.managers.scheduler import GenerationBatchResult
+ from sglang.srt.managers.tp_worker import TpModelWorker
++from sglang.srt.mem_cache.memory_pool import KVWriteLoc
++from sglang.srt.mem_cache.swa_memory_pool import SWAKVPool
+ from sglang.srt.model_executor.cuda_graph_config import Backend
+ from sglang.srt.model_executor.forward_batch_info import (
+     CaptureHiddenMode,
+@@ -1722,6 +1724,15 @@ def _ensure_local_reduce_buffers(
+ 
+         return out_tokens
+ 
++    def _draft_kv_write_loc(self, cache_loc: torch.Tensor):
++        """Add the draft-side loc for a bounded draft pool."""
++        pool = self.draft_model_runner.token_to_kv_pool
++        if not isinstance(pool, SWAKVPool):
++            return cache_loc
++        return KVWriteLoc(
++            loc=cache_loc, swa_loc=pool.translate_loc_from_full_to_swa(cache_loc)
++        )
++
+     def _append_target_hidden_to_draft_kv_by_loc(
+         self,
+         *,
+@@ -1857,6 +1868,7 @@ def _append_target_hidden_to_draft_kv_by_loc(
+                         self._use_fused_kv_materialize = False
+                         self._fused_kv_helper = None
+ 
++                write_loc_2d = self._draft_kv_write_loc(cache_loc_2d)
+                 for layer in self.draft_model.layers:
+                     attn = layer.self_attn
+                     layer_ctx_hidden = self.draft_model.prepare_context_hidden_for_kv(
+@@ -1870,7 +1882,7 @@ def _append_target_hidden_to_draft_kv_by_loc(
+ 
+                     self.draft_model_runner.token_to_kv_pool.set_kv_buffer_prefix_valid(
+                         attn.attn,
+-                        cache_loc_2d,
++                        write_loc_2d,
+                         commit_lens,
+                         k,
+                         v,
+@@ -1907,6 +1919,7 @@ def _append_target_hidden_sequential(
+         ctx_positions: torch.Tensor,
+         ctx_cache_loc: torch.Tensor,
+     ) -> None:
++        write_loc = self._draft_kv_write_loc(ctx_cache_loc)
+         for layer in self.draft_model.layers:
+             attn = layer.self_attn
+             layer_ctx_hidden = self.draft_model.prepare_context_hidden_for_kv(
+@@ -1925,7 +1938,7 @@ def _append_target_hidden_sequential(
+             v = v.view(-1, attn.num_kv_heads, attn.head_dim)
+             self.draft_model_runner.token_to_kv_pool.set_kv_buffer(
+                 attn.attn,
+-                ctx_cache_loc,
++                write_loc,
+                 k,
+                 v,
+                 attn.attn.k_scale,
+@@ -1944,6 +1957,12 @@ def _append_target_hidden_fused(
+         token_to_kv_pool = self.draft_model_runner.token_to_kv_pool
+         if self._fused_kv_helper is None:
+             raise RuntimeError("DFLASH fused KV helper is not initialized.")
++        write_loc = self._draft_kv_write_loc(ctx_cache_loc)
++        write_loc_2d = (
++            None
++            if ctx_cache_loc_2d is None
++            else self._draft_kv_write_loc(ctx_cache_loc_2d)
++        )
+ 
+         def _write_layer_kv(
+             layer_idx: int,
+@@ -1951,10 +1970,10 @@ def _write_layer_kv(
+             cache_v: torch.Tensor,
+         ) -> None:
+             attn = self.draft_model.layers[layer_idx].self_attn.attn
+-            if ctx_cache_loc_2d is not None and commit_lens is not None:
++            if write_loc_2d is not None and commit_lens is not None:
+                 token_to_kv_pool.set_kv_buffer_prefix_valid(
+                     attn,
+-                    ctx_cache_loc_2d,
++                    write_loc_2d,
+                     commit_lens,
+                     cache_k,
+                     cache_v,
+@@ -1964,7 +1983,7 @@ def _write_layer_kv(
+             else:
+                 token_to_kv_pool.set_kv_buffer(
+                     attn,
+-                    ctx_cache_loc,
++                    write_loc,
+                     cache_k,
+                     cache_v,
+                     attn.k_scale,
+diff --git a/test/registered/spec/dflash/test_dflash_draft_kv_ratio.py b/test/registered/spec/dflash/test_dflash_draft_kv_ratio.py
+new file mode 100644
+index 000000000000..1d2614a12d3d
+--- /dev/null
++++ b/test/registered/spec/dflash/test_dflash_draft_kv_ratio.py
+@@ -0,0 +1,219 @@
++"""End-to-end test for --speculative-draft-kv-ratio.
++
++Pairs a linear/full-attention target with an all-SWA DFLASH draft:
++``Qwen/Qwen3.8-27B`` and ``z-lab/Qwen3.8-27B-DFlash2`` (5 ``sliding_attention``
++layers, ``sliding_window`` 2048, block size 8). Below 1.0 the draft's KV holds
++a fraction of the target's tokens in a sliding-window pool instead of one slot
++per target token, and a radix prefix hit still reuses the whole cached prefix.
++"""
++
++import os
++import re
++import tempfile
++import unittest
++from contextlib import ExitStack
++
++import requests
++
++from sglang.srt.environ import envs
++from sglang.srt.utils import kill_process_tree
++from sglang.test.ci.ci_register import register_cuda_ci
++from sglang.test.kits.eval_accuracy_kit import GSM8KMixin
++from sglang.test.test_utils import (
++    DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
++    DEFAULT_URL_FOR_TEST,
++    CustomTestCase,
++    popen_launch_server,
++)
++
++register_cuda_ci(est_time=500, stage="nightly", runner_config="1-gpu-large")
++
++TARGET_MODEL = "Qwen/Qwen3.8-27B"
++DRAFT_MODEL = "z-lab/Qwen3.8-27B-DFlash2"
++DRAFT_WINDOW = 2048
++DRAFT_BLOCK_SIZE = 8
++DRAFT_KV_RATIO = 0.25
++MAX_RUNNING_REQUESTS = 8
++# The target resumes a prefix hit at its last linear-attention checkpoint,
++# which is chunk aligned; allow one chunk of slack before the prompt end.
++CHECKPOINT_SLACK = 128
++
++# Several draft windows long, so a repeated request is a prefix hit whose
++# draft window lies well inside cached territory.
++_LONG_PROMPT = " ".join(
++    f"Entry {i}: the quick brown fox number {i} jumps over the lazy dog number {i + 1}."
++    for i in range(700)
++)
++_ESSAY_QUESTION = (
++    "\n\nWrite a detailed essay on how foxes and dogs are portrayed in folklore, "
++    "with examples from at least three cultures."
++)
++
++
++class TestDFlashDraftKVRatio(CustomTestCase, GSM8KMixin):
++    model = TARGET_MODEL
++    draft_model = DRAFT_MODEL
++    page_size = 1
++    gsm8k_accuracy_thres = 0.80
++    gsm8k_accept_length_thres = 3.0
++    gsm8k_num_questions = 200
++
++    @classmethod
++    def setUpClass(cls):
++        cls.base_url = DEFAULT_URL_FOR_TEST
++        cls.log_dir = tempfile.mkdtemp(prefix="dflash_draft_kv_ratio_")
++        cls.stdout = open(os.path.join(cls.log_dir, "server_stdout.log"), "w")
++        cls.stderr = open(os.path.join(cls.log_dir, "server_stderr.log"), "w")
++        launch_args = [
++            "--trust-remote-code",
++            "--speculative-algorithm",
++            "DFLASH",
++            "--speculative-draft-model-path",
++            cls.draft_model,
++            "--speculative-num-draft-tokens",
++            str(DRAFT_BLOCK_SIZE),
++            "--speculative-draft-window-size",
++            str(DRAFT_WINDOW),
++            "--speculative-draft-kv-ratio",
++            str(DRAFT_KV_RATIO),
++            "--max-running-requests",
++            str(MAX_RUNNING_REQUESTS),
++            "--page-size",
++            str(cls.page_size),
++            "--mem-fraction-static",
++            "0.8",
++        ]
++        with ExitStack() as stack:
++            for env, value in (
++                (envs.SGLANG_ENABLE_STRICT_MEM_CHECK_DURING_BUSY, 1),
++                (envs.SGLANG_ENABLE_ASYNC_ASSERT, True),
++            ):
++                stack.enter_context(env.override(value))
++            cls.process = popen_launch_server(
++                cls.model,
++                cls.base_url,
++                timeout=max(DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH, 1800),
++                other_args=launch_args,
++                return_stdout_stderr=(cls.stdout, cls.stderr),
++            )
++
++    @classmethod
++    def tearDownClass(cls):
++        if hasattr(cls, "process") and cls.process:
++            kill_process_tree(cls.process.pid)
++        for f in (getattr(cls, "stdout", None), getattr(cls, "stderr", None)):
++            if f is not None:
++                f.close()
++
++    def _server_log(self) -> str:
++        self.stdout.flush()
++        self.stderr.flush()
++        text = ""
++        for name in ("server_stdout.log", "server_stderr.log"):
++            with open(os.path.join(self.log_dir, name)) as f:
++                text += f.read()
++        return text
++
++    def _generate(self, prompt: str, max_new_tokens: int) -> dict:
++        res = requests.post(
++            self.base_url + "/generate",
++            json={
++                "text": prompt,
++                "sampling_params": {"max_new_tokens": max_new_tokens, "temperature": 0},
++            },
++        )
++        res.raise_for_status()
++        return res.json()
++
++    def _flush_cache(self):
++        requests.post(self.base_url + "/flush_cache").raise_for_status()
++
++    def _pool_sizing(self) -> tuple:
++        """(window, ratio, draft tokens, request cap) from the startup log."""
++        sizing = re.search(
++            r"DFLASH draft KV pool: window=(\d+), ratio=([0-9.]+), tokens=(\d+) "
++            r"\(request cap (\d+)",
++            self._server_log(),
++        )
++        self.assertIsNotNone(sizing, "draft KV pool sizing not logged")
++        window, ratio, tokens, cap = sizing.groups()
++        return int(window), float(ratio), int(tokens), int(cap)
++
++    def test_draft_pool_is_ratio_of_target(self):
++        window, ratio, draft_tokens, cap = self._pool_sizing()
++        self.assertEqual(window, DRAFT_WINDOW)
++        self.assertEqual(ratio, DRAFT_KV_RATIO)
++        self.assertGreaterEqual(draft_tokens, cap)
++        log = self._server_log()
++        target_tokens = int(re.search(r"max_total_num_tokens=(\d+)", log).group(1))
++        self.assertEqual(
++            draft_tokens,
++            int(target_tokens * DRAFT_KV_RATIO) // self.page_size * self.page_size,
++        )
++        # The draft pool is built with that many slots.
++        pools = re.findall(r"SWAKVPool .*swa size: (\d+), full size: (\d+)", log)
++        self.assertIn(draft_tokens, [int(swa) for swa, _ in pools])
++
++    def test_prefix_hit_reuses_whole_prompt(self):
++        """A cached prefix keeps its trailing window, so nothing is held back."""
++        self._flush_cache()
++        cold = self._generate(_LONG_PROMPT, 8)
++        prompt_tokens = cold["meta_info"]["prompt_tokens"]
++        self.assertGreater(prompt_tokens, 2 * DRAFT_WINDOW)
++        warm = self._generate(_LONG_PROMPT, 8)
++        cached_tokens = warm["meta_info"]["cached_tokens"]
++        print(
++            f"prefix hit: prompt_tokens={prompt_tokens}, cached_tokens={cached_tokens}"
++        )
++        self.assertGreater(cached_tokens, prompt_tokens - DRAFT_WINDOW)
++        self.assertGreaterEqual(
++            cached_tokens, prompt_tokens - CHECKPOINT_SLACK - self.page_size
++        )
++
++    def test_greedy_determinism_across_hit(self):
++        self._flush_cache()
++        prompt = _LONG_PROMPT + _ESSAY_QUESTION
++        cold = self._generate(prompt, 256)
++        warm = self._generate(prompt, 256)
++        self.assertGreater(warm["meta_info"]["cached_tokens"], 0)
++        self.assertEqual(cold["text"], warm["text"])
++        self.assertIsNone(self.process.poll())
++
++    def test_evicted_window_falls_back(self):
++        """More cached prefixes than the draft pool holds: the oldest loses its
++        window, and a hit on it re-prefills instead of reading freed slots."""
++        self._flush_cache()
++        _, _, draft_tokens, cap = self._pool_sizing()
++        # One more than the pool holds, at the window each cached prefix keeps.
++        num_prompts = (draft_tokens - cap) // DRAFT_WINDOW + 2
++        prompts = [
++            _LONG_PROMPT.replace("quick", f"quick-{i}") + _ESSAY_QUESTION
++            for i in range(num_prompts)
++        ]
++        cold = self._generate(prompts[0], 64)
++        prompt_tokens = cold["meta_info"]["prompt_tokens"]
++        for prompt in prompts[1:]:
++            self._generate(prompt, 8)
++        warm = self._generate(prompts[0], 64)
++        cached_tokens = warm["meta_info"]["cached_tokens"]
++        print(
++            f"after {num_prompts} prefixes: prompt_tokens={prompt_tokens}, "
++            f"cached_tokens={cached_tokens}"
++        )
++        self.assertLessEqual(cached_tokens, prompt_tokens - DRAFT_WINDOW)
++        self.assertEqual(cold["text"], warm["text"])
++        self.assertIsNone(self.process.poll())
++
++
++class TestDFlashDraftKVRatioPaged(TestDFlashDraftKVRatio):
++    """The same pool at page size 64, where the allocator pages both sides and
++    the draft backend builds its page table from translated slots."""
++
++    page_size = 64
++
++    def test_gsm8k(self):
++        self.skipTest("accuracy does not depend on the page size")
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/test/registered/unit/model_executor/test_pool_configurator.py b/test/registered/unit/model_executor/test_pool_configurator.py
+index 26fc85b22ae2..3a6c61503385 100644
+--- a/test/registered/unit/model_executor/test_pool_configurator.py
++++ b/test/registered/unit/model_executor/test_pool_configurator.py
+@@ -96,6 +96,8 @@ def _make_model_runner(
+     qk_rope_head_dim=64,
+     swa_kv_lora_rank=128,
+     swa_qk_rope_head_dim=32,
++    speculative_draft_window_size=None,
++    speculative_draft_kv_ratio=1.0,
+ ):
+     """Create a mock ModelRunner with the fields configurators need."""
+     mr = MagicMock()
+@@ -156,6 +158,8 @@ def _make_model_runner(
+         speculative_algorithm=speculative_algorithm,
+         speculative_num_steps=speculative_num_steps,
+         speculative_eagle_topk=speculative_eagle_topk,
++        speculative_draft_window_size=speculative_draft_window_size,
++        speculative_draft_kv_ratio=speculative_draft_kv_ratio,
+         disaggregation_mode=disaggregation_mode,
+         max_running_requests=max_running_requests,
+         disaggregation_decode_extra_slots=disaggregation_decode_extra_slots,
+@@ -180,11 +184,13 @@ def _make_model_runner(
+     )
+     mr.attn_dp_size = 1
+     mr.pp_size = 1
++    mr.draft_kv_ratio = speculative_draft_kv_ratio
+     mr.pp_group = SimpleNamespace(rank_in_group=0)
+     mr.spec_aux_config = SimpleNamespace(
+         eagle_draft_num_layers=None,
+         eagle_draft_swa_num_layers=None,
+         dflash_draft_num_layers=None,
++        dflash_draft_cell_size_per_token=None,
+     )
+ 
+     return mr
+@@ -1335,5 +1341,115 @@ def test_dsv4_fp8_mtp_swa_ring_keeps_spec_inflation(self):
+         self.assertEqual(cfg._fixed_swa_bytes(mrr), int(target * cfg._spec_infl))
+ 
+ 
++class TestDFlashDraftKVRatioConfigurator(CustomTestCase):
++    """--speculative-draft-kv-ratio: the draft holds its share of the target's
++    tokens, priced into the cell size, and must still cover running requests."""
++
++    WINDOW = 64
++    DRAFT_CELL = 48  # bytes/token of the draft KV
++    MAX_RUNNING = 2
++
++    def _make(self, ratio, **kwargs):
++        mr = _make_model_runner(
++            self,
++            num_layers=4,
++            speculative_algorithm="DFLASH",
++            speculative_num_steps=1,
++            speculative_eagle_topk=1,
++            speculative_num_draft_tokens=8,
++            disable_overlap_schedule=True,
++            max_running_requests=self.MAX_RUNNING,
++            chunked_prefill_size=32,
++            speculative_draft_window_size=self.WINDOW,
++            speculative_draft_kv_ratio=ratio,
++            **kwargs,
++        )
++        mr.spec_algorithm.is_dflash_family.return_value = True
++        mr.spec_algorithm.is_none.return_value = False
++        mr.spec_aux_config.dflash_draft_num_layers = 5
++        mr.spec_aux_config.dflash_draft_cell_size_per_token = self.DRAFT_CELL
++        return mr
++
++    def _run(self, ratio, available_bytes=10_000_000, page_size=1, **kwargs):
++        mr = self._make(ratio, page_size=page_size, **kwargs)
++        with mock_cpu_env():
++            from sglang.srt.model_executor.pool_configurator import (
++                create_memory_pool_configurator,
++            )
++
++            cfg = create_memory_pool_configurator(mr)
++            config = cfg.calculate_pool_sizes(available_bytes, page_size)
++        return mr, cfg, config
++
++    def test_draft_pool_is_ratio_of_target(self):
++        _, _, config = self._run(0.5)
++        self.assertEqual(config.full_max_total_num_tokens, config.max_total_num_tokens)
++        self.assertEqual(
++            config.swa_max_total_num_tokens, int(config.max_total_num_tokens * 0.5)
++        )
++
++    def test_ratio_is_priced_into_cell_size(self):
++        mr, cfg, _ = self._run(0.5)
++        target_cell = _full_per_token(mr) * 4
++        self.assertEqual(cfg._cell_size, target_cell + self.DRAFT_CELL // 2)
++
++    def test_memory_utilization(self):
++        available = 10_000_000
++        mr, _, config = self._run(0.5, available_bytes=available)
++        used = (
++            config.max_total_num_tokens * _full_per_token(mr) * 4
++            + config.swa_max_total_num_tokens * self.DRAFT_CELL
++        )
++        self.assertLessEqual(used, available)
++        self.assertGreater(used, available * 0.99)
++
++    def test_page_alignment(self):
++        _, _, config = self._run(0.5, page_size=16)
++        self.assertEqual(config.max_total_num_tokens % 16, 0)
++        self.assertEqual(config.swa_max_total_num_tokens % 16, 0)
++
++    def test_constraint_keeps_ratio(self):
++        _, cfg, _ = self._run(0.5)
++        with mock_cpu_env():
++            constrained = cfg.calculate_pool_sizes_from_max_tokens(1000, page_size=1)
++        self.assertEqual(constrained.max_total_num_tokens, 1000)
++        self.assertEqual(constrained.swa_max_total_num_tokens, 500)
++
++    def test_ratio_below_request_cap_raises_a_usable_minimum(self):
++        """The minimum the error names must itself pass, which the ratio the
++        target pool was sized at does not give. This ratio also rounds the
++        draft's share below one byte, which the pool still prices at one."""
++        import re
++
++        with self.assertRaises(RuntimeError) as raised:
++            self._run(0.001)
++        message = str(raised.exception)
++        self.assertRegex(message, r"below the \d+ its running requests need")
++        minimum = float(re.search(r"Use at least ([0-9.]+)", message).group(1))
++        _, _, config = self._run(minimum)
++        self.assertGreaterEqual(
++            config.swa_max_total_num_tokens,
++            int(config.max_total_num_tokens * minimum) - 1,
++        )
++
++    def test_ratio_of_one_leaves_the_pool_config_alone(self):
++        mr, cfg, config = self._run(1.0)
++        self.assertIsNone(config.swa_max_total_num_tokens)
++        self.assertEqual(cfg._cell_size, _full_per_token(mr) * 4 + self.DRAFT_CELL)
++
++    def test_unresolved_draft_cell_size_raises(self):
++        """Without the draft's bytes/token the budget scales by layer count,
++        which prices neither the draft's geometry nor the ratio."""
++        mr = self._make(0.25, page_size=1)
++        mr.spec_aux_config.dflash_draft_cell_size_per_token = None
++        with mock_cpu_env():
++            from sglang.srt.model_executor.pool_configurator import (
++                create_memory_pool_configurator,
++            )
++
++            with self.assertRaisesRegex(ValueError, "KV bytes/token"):
++                create_memory_pool_configurator(mr)
++
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/test/registered/unit/server_args/test_server_args.py b/test/registered/unit/server_args/test_server_args.py
+index fed3493e58c6..d70a80bd35d0 100644
+--- a/test/registered/unit/server_args/test_server_args.py
++++ b/test/registered/unit/server_args/test_server_args.py
+@@ -1038,6 +1038,24 @@ def test_sm100_native_nvfp4_rejects_prefix_commit_spec_algorithms(self):
+                 with self.assertRaisesRegex(ValueError, algorithm):
+                     handle_kv4_compatibility(args)
+ 
++    def test_draft_kv_ratio_range(self):
++        """The draft pool is indexed by target slot, so a ratio above 1 would
++        hold slots the target cannot address."""
++        from sglang.srt.arg_groups.speculative_hook import _handle_dflash
++
++        for ratio in (0, -0.5, 1.5):
++            with self.subTest(ratio=ratio):
++                args = ServerArgs(
++                    model_path="dummy",
++                    device="cuda",
++                    speculative_algorithm="DFLASH",
++                    speculative_draft_model_path="dummy-draft",
++                    speculative_num_draft_tokens=8,
++                    speculative_draft_kv_ratio=ratio,
++                )
++                with self.assertRaisesRegex(ValueError, r"must be in \(0, 1\]"):
++                    _handle_dflash(args)
++
+     @override_platform(is_cuda=True, is_sm100=False, is_sm120=True)
+     def test_sm120_xqa_keeps_existing_speculative_support(self):
+         args = self._make_nvfp4_args(speculative_algorithm="EAGLE")
