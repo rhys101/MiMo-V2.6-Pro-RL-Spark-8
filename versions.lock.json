@@ -73,6 +73,10 @@
     {
       "file": "mimo26-dflash-adaptive.diff",
       "origin": "this repo"
+    },
+    {
+      "file": "mimo26-chunked-admission.diff",
+      "origin": "this repo"
     }
   ],
   "b12x": {
@@ -81,8 +85,8 @@
     "use": "RoCEnante TP8 all-reduce only"
   },
   "image": {
-    "tag": "mimo26-spark:a13",
-    "id": "sha256:7d0b41517ae411b8f48eaed02236d6d2c5c7968c8d5eac9d1076fa9ce08af6ca"
+    "tag": "mimo26-spark:a14",
+    "id": "sha256:db156b3c950a0ec9c4a7d629f7574f65c1023150bcf2d0755c45d4f2c3cab661"
   },
   "fp8_tile_tables": "patches/fp8-configs (GB10, tuned 2026-09-24)",
   "serving_env": {

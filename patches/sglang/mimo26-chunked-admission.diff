@@ -1,0 +1,18 @@
+diff --git a/python/sglang/srt/managers/scheduler.py b/python/sglang/srt/managers/scheduler.py
+index b57c93299a..c0b0571c8a 100644
+--- a/python/sglang/srt/managers/scheduler.py
++++ b/python/sglang/srt/managers/scheduler.py
+@@ -3944,7 +3944,12 @@ class Scheduler(
+             candidate_beam_width = (
+                 req.beam_group.beam_width if req.beam_group is not None else None
+             )
+-            if len(adder.can_run_list) >= self.get_num_allocatable_reqs(
++            # mimo26: a continuing chunked request already holds its req slot; only
++            # requests that still need one count against the free slots. Counting it
++            # set batch_is_full with a slot free, and that flag stays set until a
++            # request finishes, so the next waiting request sat out the whole decode.
++            new_slot_reqs = sum(1 for r in adder.can_run_list if not r.kv.holds_kv)
++            if new_slot_reqs >= self.get_num_allocatable_reqs(
+                 running_bs,
+                 candidate_beam_width,
+                 running_batch=running_batch,

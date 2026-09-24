@@ -26,7 +26,9 @@ COPY patches/sglang/ /opt/mimo26/patches/sglang/
 # mimo26-fp8-oproj: optional (MIMO26_FP8_OPROJ=1) block-FP8 serving of the BF16 attention o_proj.
 # mimo26-dflash-adaptive: optional (MIMO26_DFLASH_ADAPTIVE=1) per-step DFLASH verify width (4 or 8)
 #   from each request's recent acceptance; FA3/FA4 verify metadata made width-aware.
-ARG SGLANG_PRS="40722 40888 38142 40633 40665 29858 rocenante mimo26-fast-expert-load mimo26-marlin-skip-zero-fill mimo26-fp8-oproj mimo26-dflash-adaptive"
+# mimo26-chunked-admission: a continuing chunked-prefill request no longer counts against free
+#   request slots (it left the next request queued until one finished).
+ARG SGLANG_PRS="40722 40888 38142 40633 40665 29858 rocenante mimo26-fast-expert-load mimo26-marlin-skip-zero-fill mimo26-fp8-oproj mimo26-dflash-adaptive mimo26-chunked-admission"
 RUN cd /sgl-workspace/sglang \
  && test "$(git rev-parse HEAD)" = 06008c170dae333e22caceb51f36224071f9b5b3 \
  && for pr in ${SGLANG_PRS}; do echo "applying $pr"; git apply /opt/mimo26/patches/sglang/$pr.diff || exit 1; done \

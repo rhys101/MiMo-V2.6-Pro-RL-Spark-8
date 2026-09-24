@@ -17,7 +17,8 @@ story, 256 tokens) and only compare builds with each other. Benchmark figures ar
 | a7 | + **FP8 `o_proj`** (block 128×128, fp32 scales) | 74.5 / 28.5 | 86.2 | 62.2 | 170.7 | GSM8K 97.5%; BF16+FP8 GEMMs 24.3 → 21.1 ms/step |
 | a9 | + FP8 DFlash draft linears + GB10-tuned FP8 tiles | 70.9 / 29.1 | 88.9 | 64.6 | 176.5 | GSM8K 97.5%; long extraction 101.7; GEMMs 19.0 ms/step |
 | a11 | draft `qkv_proj` back to BF16 (re-enables fused KV materialization) | 76.5 / 30.3 | — | — | — | smoke only |
-| **a13** | + **adaptive DFlash verify width** (4 or 8 per step), FA4 verify width-aware | 63.8 / 38.8 | 91.1 | **69.1** | **190.8** | GSM8K 98.0%; long extraction **104.7**; prose 40.3, narrative 36.0 |
+| **a13** | + **adaptive DFlash verify width** (4 or 8 per step), FA4 verify width-aware | 63.8 / 38.8 | 91.1 | **69.1** | **190.8** | GSM8K 98.0%; long extraction **104.7**; prose 40.3, narrative 36.0; C8 long extraction 234.6 |
+| **a14** | + chunked-prefill admission fix (scheduler) | 67.9 / 37.7 | — | — | — | C8 long extraction **306.7** (+31%), 24/24 |
 
 ## Findings
 
@@ -56,6 +57,13 @@ story, 256 tokens) and only compare builds with each other. Benchmark figures ar
   keeps separate metadata per width.
 - **FP8 on the draft's fused `qkv` disables fused KV materialization.** Keeping
   it BF16 is faster overall than the FP8 bytes it saves.
+- **An 8th request could wait out a whole decode.** When a prefill batch needed
+  chunking, SGLang's admission check counted the request finishing its last chunk
+  (which already holds a request slot) against the free slots, set
+  `batch_is_full`, and kept it set until a request finished. MiMo's SWA pool is not
+  SGLang's hybrid-SWA mode, so nothing reset the flag earlier. Found with
+  rate-limited admission logging; fixed by counting only requests that still
+  need a slot (a14). Upstream SGLang has the same check.
 - Startup occasionally fails with `CUDA error: operation not permitted` while
   capturing draft CUDA graphs on one rank (a10, a13); a restart succeeds.
 - A per-step thinking/answer split (`eval/phase_accept.py`, `results/phase/`):

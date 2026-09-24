@@ -14,7 +14,7 @@ OpenAI-compatible API.
 
 ## Performance
 
-Measured **24 September 2026** on build `a13` (TP8 · EP1 · Marlin W4A16 MoE ·
+Measured **24 September 2026** on build `a13` (serving build `a14` adds only the scheduler fix below) (TP8 · EP1 · Marlin W4A16 MoE ·
 DFlash-8 with **per-request adaptive verify width** · RoCEnante all-reduce · FA4
 prefill and verify · FP8 `o_proj` and DFlash draft · GB10-tuned FP8 GEMM tiles).
 Benchmark prompts and metrics are identical to the
@@ -39,8 +39,20 @@ with it DFlash acceptance, changes with small numeric differences. Compare the
 means, and the repeatable long-extraction measurement:
 
 Long structured extraction (four CSV→JSON tasks, cold cache, end to end,
-prefill included, 3 repeats, 12/12 correct): **104.7 tok/s** on a13, 101.7 on
-a9, 95.0 on a6.
+prefill included, all answers correct; `bench/long_extraction_c1.py`, `_c8.py`):
+
+| | a14 | a13 | a9 | a6 |
+|---|---:|---:|---:|---:|
+| C1, 3 repeats | — | **104.7** | 101.7 | 95.0 |
+| C8 aggregate, each task twice per wave, 3 waves | **306.7** | 234.6 | — | — |
+
+a14 is a13 plus a scheduler fix: when a batch needed chunked prefill, SGLang
+counted the request finishing its last chunk against the free request slots even
+though it already held one, marked the batch full, and left the 8th request queued
+until another finished (the C8 wave ran as seven streams plus a lone straggler;
+worst time to first token 46 s → 8 s). Single requests and the short-prompt
+benchmark never take this path, so the C1 and headline figures measured on a13
+still apply.
 
 Cold prefill (unique prefix, TTFT-based, median of 3 runs, a13): **1,880 tok/s**
 at 5K tokens, 1,511 at 20K, 1,679 at 81K, 1,499 at 163K; within run-to-run
@@ -67,7 +79,7 @@ its loss on code.
 
 | Check | Result |
 |---|---|
-| Smoke: arithmetic, reasoning split, tool call, image (red/blue halves) | pass on every build |
+| Smoke: arithmetic, reasoning split, tool call, image (red/blue halves) | pass on every build (a14 included) |
 | GSM8K, first 200 test questions, greedy, thinking off | **98.0%** (a13), 97.5% (a9, a7), 96.5% (a6), 97.0% (a4-marlin, a5-eagle) |
 | Needle retrieval, 3 facts | pass at 127,803 tokens (a5, a6) and 244,168 tokens (a5) |
 | Mixed workload: 300-integer JSON-schema generation + 3 short requests + forced tool call admitted mid-decode, ×3 | 3/3 pass (a5 EAGLE, a6 DFlash) |
@@ -138,10 +150,10 @@ Boot takes 12–14 minutes, mostly weight loading.
 ## What is in the image
 
 Pinned base `lmsysorg/sglang` dev-cu13 (sglang `06008c17`, which carries MiMo-V2.6
-day-0 support, sglang#40448) plus eleven patches: six open upstream PRs, the
-RoCEnante all-reduce hook ported from the DeepSeek build, and four local changes
+day-0 support, sglang#40448) plus twelve patches: six open upstream PRs, the
+RoCEnante all-reduce hook ported from the DeepSeek build, and five local changes
 (fast expert load, Marlin zero-fill skip, optional FP8 serving of BF16 linears,
-adaptive DFlash verify width).
+adaptive DFlash verify width, chunked-prefill admission fix).
 It also carries Triton block-FP8 tile tables tuned on GB10 for MiMo's per-rank
 shapes (`patches/fp8-configs/`).
 See [patches/README.md](patches/README.md) and [versions.lock.json](versions.lock.json).
