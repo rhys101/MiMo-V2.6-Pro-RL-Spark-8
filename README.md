@@ -42,8 +42,10 @@ Long structured extraction (four CSV→JSON tasks, cold cache, end to end,
 prefill included, 3 repeats, 12/12 correct): **104.7 tok/s** on a13, 101.7 on
 a9, 95.0 on a6.
 
-Cold prefill (unique prefix, TTFT-based, a6): **1,899 tok/s** at 5K tokens, 1,629
-at 20K, 1,720 at 81K, 1,515 at 163K.
+Cold prefill (unique prefix, TTFT-based, one request per size): a13 1,700 tok/s
+at 5K tokens, 1,384 at 20K, 1,700 at 81K, 1,500 at 163K. a6 was faster on short
+prompts (**1,899** at 5K, 1,629 at 20K; 1,720 and 1,515 at 81K/163K), so a later
+build added a fixed per-chunk cost that long-context attention hides.
 
 **Adaptive verify width.** DFlash drafts 8 tokens per step, but on free prose
 only ~2 of them are accepted, so most of the verify step's expert reads are
