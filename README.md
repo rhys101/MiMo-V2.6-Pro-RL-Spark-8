@@ -43,7 +43,7 @@ prefill included, all answers correct; `bench/long_extraction_c1.py`, `_c8.py`):
 
 | | a14 | a13 | a9 | a6 |
 |---|---:|---:|---:|---:|
-| C1, 3 repeats | — | **104.7** | 101.7 | 95.0 |
+| C1, 3 repeats | 104.6 | **104.7** | 101.7 | 95.0 |
 | C8 aggregate, each task twice per wave, 3 waves | **306.7** | 234.6 | — | — |
 
 a14 is a13 plus a scheduler fix: when a batch needed chunked prefill, SGLang

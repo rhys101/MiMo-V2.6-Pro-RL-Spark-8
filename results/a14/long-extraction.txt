@@ -1,0 +1,13 @@
+(0, 'mimo-decode-0', True, 1829, 17.65, 1.3, 1498)
+(0, 'mimo-decode-1', True, 1829, 17.57, 0.97, 1498)
+(0, 'mimo-decode-2', True, 1829, 17.4, 0.97, 1498)
+(0, 'mimo-decode-3', True, 1829, 17.5, 0.97, 1498)
+(1, 'mimo-decode-0', True, 1829, 17.39, 0.98, 1498)
+(1, 'mimo-decode-1', True, 1829, 17.51, 0.96, 1498)
+(1, 'mimo-decode-2', True, 1829, 17.35, 0.98, 1498)
+(1, 'mimo-decode-3', True, 1829, 17.54, 0.96, 1498)
+(2, 'mimo-decode-0', True, 1829, 17.42, 0.97, 1498)
+(2, 'mimo-decode-1', True, 1829, 17.56, 0.97, 1498)
+(2, 'mimo-decode-2', True, 1833, 17.42, 0.98, 1498)
+(2, 'mimo-decode-3', True, 1829, 17.55, 0.96, 1498)
+{"requests": 12, "passed": 12, "tokens": 21952, "seconds": 209.86, "e2e_tok_s": 104.6}
