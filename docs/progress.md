@@ -1,6 +1,6 @@
 # Progress and experiment trail
 
-All runs on 23 September 2026, same eight Sparks, same checkpoint revision.
+All runs on 23–24 September 2026, same eight Sparks, same checkpoint revision.
 "Smoke" speeds use `runtime/smoke.py`'s own prompts (LRU-cache code, lighthouse
 story, 256 tokens) and only compare builds with each other. Benchmark figures are
 `bench/mimobench.py` per-stream C1 decode.
@@ -15,7 +15,9 @@ story, 256 tokens) and only compare builds with each other. Benchmark figures ar
 | a6 | DFlash-8 + Marlin zero-fill skip + **FA4 prefill** | 72.2 / 27.4 | **91.4** | **60.9** | 171.1 | GSM8K 96.5%; prefill 1.5–1.9K tok/s |
 | a6-b4 | DFlash verify window 4 instead of 8 | — | 65.8 | 50.7 | 174.2 | prose 32.3 → 41.3, summary +21%; code −28%, format −42% |
 | a7 | + **FP8 `o_proj`** (block 128×128, fp32 scales) | 74.5 / 28.5 | 86.2 | 62.2 | 170.7 | GSM8K 97.5%; BF16+FP8 GEMMs 24.3 → 21.1 ms/step |
-| **a9** | + FP8 DFlash draft linears + GB10-tuned FP8 tiles | 70.9 / 29.1 | 88.9 | **64.6** | **176.5** | GSM8K 97.5%; long extraction **101.7**; GEMMs 19.0 ms/step |
+| a9 | + FP8 DFlash draft linears + GB10-tuned FP8 tiles | 70.9 / 29.1 | 88.9 | 64.6 | 176.5 | GSM8K 97.5%; long extraction 101.7; GEMMs 19.0 ms/step |
+| a11 | draft `qkv_proj` back to BF16 (re-enables fused KV materialization) | 76.5 / 30.3 | — | — | — | smoke only |
+| **a13** | + **adaptive DFlash verify width** (4 or 8 per step), FA4 verify width-aware | 63.8 / 38.8 | 91.1 | **69.1** | **190.8** | GSM8K 98.0%; long extraction **104.7**; prose 40.3, narrative 36.0 |
 
 ## Findings
 
@@ -44,7 +46,18 @@ story, 256 tokens) and only compare builds with each other. Benchmark figures ar
 - **GB10 had no Triton block-FP8 tables.** Tuning N=3392/6144/4096 for M 1–64
   (`patches/fp8-configs/`) changes little on its own; the gain is from halving bytes.
 - **Verify window is workload-dependent.** 4 tokens wins prose and summaries by
-  20–28% and loses code/format by 28–42%; a per-request window is the next step.
+  20–28% and loses code/format by 28–42%. a13 picks it per step from each
+  request's recent acceptance (EMA, hysteresis 1.8 / 2.6): +23–25% on prose,
+  narrative and summaries at C1, +8% C8 aggregate, format −11% at C1.
+- **Target verify must stay on FA4.** SGLang's Triton target-verify path
+  (`--speculative-attention-mode decode`) produces wrong output on MiMo even at
+  full width. The FA backend hard-coded the 8-token width and rebuilt its graph
+  metadata on a second capture (which corrupted the full-width graphs); a13
+  keeps separate metadata per width.
+- **FP8 on the draft's fused `qkv` disables fused KV materialization.** Keeping
+  it BF16 is faster overall than the FP8 bytes it saves.
+- Startup occasionally fails with `CUDA error: operation not permitted` while
+  capturing draft CUDA graphs on one rank (a10, a13); a restart succeeds.
 - A per-step thinking/answer split (`eval/phase_accept.py`, `results/phase/`):
   easy prompts spend ~3% of output in (English) reasoning; hard ones 61–70%, with
   reasoning accept length ~3.5 and Welsh prose answers the lowest (~1.8).
@@ -59,7 +72,7 @@ story, 256 tokens) and only compare builds with each other. Benchmark figures ar
 
 ## Not done / next
 
-- Per-request DFlash verify window (4 or 8 tokens from recent acceptance).
+- Tune the adaptive thresholds (format still narrows on some steps); a width-2/6 tier.
 - A faster small-M block-FP8 GEMM (Triton reaches ~205 GB/s of ~260).
 - Newer b12x RoCEnante (prepared-plan API, traffic class) in place of the SG17 snapshot.
 - Loader speed for EP1, prefill MoE at large M, audio/video validation, long soak.

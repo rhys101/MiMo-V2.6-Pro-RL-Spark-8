@@ -70,7 +70,7 @@ index 5722b43d45..cd5c6cc6ae 100644
 +            serve_modules_as_block_fp8(
 +                self,
 +                lambda n: n.startswith("layers.")
-+                and n.rsplit(".", 1)[-1] in ("qkv_proj", "o_proj", "gate_up_proj", "down_proj"),
++                and n.rsplit(".", 1)[-1] in ("o_proj", "gate_up_proj", "down_proj"),
 +                "DFlash draft",
 +            )
 +

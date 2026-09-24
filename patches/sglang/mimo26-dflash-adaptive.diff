@@ -1,0 +1,294 @@
+diff --git a/python/sglang/srt/layers/attention/flashattention_backend.py b/python/sglang/srt/layers/attention/flashattention_backend.py
+index ee187bade0..3c3e69d841 100644
+--- a/python/sglang/srt/layers/attention/flashattention_backend.py
++++ b/python/sglang/srt/layers/attention/flashattention_backend.py
+@@ -3744,3 +3744,85 @@ def cdiv(a: int, b: int) -> int:
+ @torch._dynamo.disable()
+ def merge_state_v2_wrapper(o, s_a, o_exp, s_b):
+     return merge_state_v2(o, s_a, o_exp, s_b)
++
++
++# mimo26: adaptive DFLASH verify width. A second, narrower target-verify graph
++# runner shares this backend; it must not reallocate the full-width runner's
++# graph buffers, and narrow verifies need their own metadata (static
++# cu_seqlens_q stride, per-bs metadata objects) and width.
++import contextlib as _mimo26_contextlib
++
++
++@_mimo26_contextlib.contextmanager
++def _mimo26_verify_width(self, forward_batch):
++    spec_info = getattr(forward_batch, "spec_info", None)
++    width = getattr(spec_info, "num_tokens_per_req", -1) if spec_info is not None else -1
++    full = getattr(self, "_mimo26_full_width", None) or self.speculative_num_draft_tokens
++    if (
++        not forward_batch.forward_mode.is_target_verify()
++        or self.topk > 1
++        or width is None
++        or width <= 0
++        or not full
++        or width == full
++    ):
++        yield
++        return
++    saved_width = self.speculative_num_draft_tokens
++    saved_meta = self.target_verify_metadata
++    base = saved_meta
++    if isinstance(base, dict) and "cache_seqlens" in base:
++        cache = self.__dict__.setdefault("_mimo26_tv_meta", {})
++        meta = cache.get(width)
++        if meta is None:
++            max_bs = base["cache_seqlens"].shape[0]
++            meta = {
++                k: torch.zeros_like(v)
++                for k, v in base.items()
++                if isinstance(k, str) and k not in ("cu_seqlens_q", "strided_indices")
++            }
++            meta["strided_indices"] = base["strided_indices"]
++            meta["cu_seqlens_q"] = torch.arange(
++                0, max_bs * width + 1, step=width, dtype=torch.int32, device=self.device
++            )
++            cache[width] = meta
++        self.target_verify_metadata = meta
++    self.speculative_num_draft_tokens = width
++    try:
++        yield
++    finally:
++        self.speculative_num_draft_tokens = saved_width
++        self.target_verify_metadata = saved_meta
++
++
++def _mimo26_wrap_metadata(name):
++    orig = getattr(FlashAttentionBackend, name)
++
++    def wrapper(self, forward_batch, *args, **kwargs):
++        with _mimo26_verify_width(self, forward_batch):
++            return orig(self, forward_batch, *args, **kwargs)
++
++    wrapper.__name__ = name
++    wrapper.__doc__ = orig.__doc__
++    return wrapper
++
++
++def _mimo26_wrap_graph_state():
++    orig = FlashAttentionBackend.init_cuda_graph_state
++
++    def init_cuda_graph_state(self, max_bs: int, max_num_tokens: int):
++        prev = getattr(self, "_mimo26_graph_state_dims", None)
++        if prev is not None and prev[0] >= max_bs and prev[1] >= max_num_tokens:
++            return
++        orig(self, max_bs, max_num_tokens)
++        self._mimo26_graph_state_dims = (max_bs, max_num_tokens)
++        self._mimo26_full_width = self.speculative_num_draft_tokens
++        self._mimo26_tv_meta = {}
++
++    init_cuda_graph_state.__doc__ = orig.__doc__
++    return init_cuda_graph_state
++
++
++for _mimo26_name in ("init_forward_metadata", "init_forward_metadata_out_graph"):
++    setattr(FlashAttentionBackend, _mimo26_name, _mimo26_wrap_metadata(_mimo26_name))
++FlashAttentionBackend.init_cuda_graph_state = _mimo26_wrap_graph_state()
+diff --git a/python/sglang/srt/layers/attention/triton_backend.py b/python/sglang/srt/layers/attention/triton_backend.py
+index 979828200d..b037bc7f63 100644
+--- a/python/sglang/srt/layers/attention/triton_backend.py
++++ b/python/sglang/srt/layers/attention/triton_backend.py
+@@ -1054,6 +1054,18 @@ class TritonAttnBackend(AttentionBackend):
+         kv_indices_buf: Optional[torch.Tensor] = None,
+         cuda_graph_num_kv_splits_buf: Optional[torch.Tensor] = None,
+     ):
++        # mimo26: a second (narrower) target-verify runner reuses the buffers the
++        # first runner's graphs already reference instead of reallocating them.
++        prev = getattr(self, "_mimo26_graph_state_dims", None)
++        if (
++            prev is not None
++            and prev[0] >= max_bs
++            and prev[1] >= max_num_tokens
++            and kv_indices_buf is None
++            and cuda_graph_num_kv_splits_buf is None
++        ):
++            return
++        self._mimo26_graph_state_dims = (max_bs, max_num_tokens)
+         self.cuda_graph_attn_logits = torch.zeros(
+             (max_num_tokens, self.num_head, self.max_kv_splits, self.v_head_dim),
+             dtype=torch.float32,
+diff --git a/python/sglang/srt/model_executor/model_runner.py b/python/sglang/srt/model_executor/model_runner.py
+index 423b5b1a6b..4780938911 100644
+--- a/python/sglang/srt/model_executor/model_runner.py
++++ b/python/sglang/srt/model_executor/model_runner.py
+@@ -1846,10 +1846,16 @@ class ModelRunner:
+                 if self.device == "cpu"
+                 else forward_batch.forward_mode.is_cuda_graph
+             )
++            graph_runner = self.decode_cuda_graph_runner
++            alt_runners = getattr(self, "mimo26_alt_verify_runners", None)
++            if alt_runners and forward_batch.forward_mode.is_target_verify():
++                # mimo26: adaptive DFLASH verify width selects its own captured graphs.
++                width = getattr(forward_batch.spec_info, "num_tokens_per_req", -1)
++                graph_runner = alt_runners.get(width, graph_runner)
+             can_run_graph = bool(
+                 mode_check()
+-                and self.decode_cuda_graph_runner
+-                and self.decode_cuda_graph_runner.can_run_graph(forward_batch)
++                and graph_runner
++                and graph_runner.can_run_graph(forward_batch)
+             )
+ 
+             if (
+@@ -1862,7 +1868,7 @@ class ModelRunner:
+ 
+             # Replay cuda graph if applicable
+             if can_run_graph:
+-                ret = self.decode_cuda_graph_runner.execute(
++                ret = graph_runner.execute(
+                     forward_batch,
+                     pp_proxy_tensors=pp_proxy_tensors,
+                 )
+diff --git a/python/sglang/srt/speculative/dflash_worker_v2.py b/python/sglang/srt/speculative/dflash_worker_v2.py
+index bb757c07be..62d213e2fe 100644
+--- a/python/sglang/srt/speculative/dflash_worker_v2.py
++++ b/python/sglang/srt/speculative/dflash_worker_v2.py
+@@ -672,6 +672,67 @@ class DFlashWorkerV2(BaseSpecWorker):
+             self._draft_worker.init_cuda_graphs(
+                 capture_decode_cuda_graph=capture_decode_cuda_graph
+             )
++        self._mimo26_setup_adaptive()
++
++    def _mimo26_setup_adaptive(self):
++        self._mimo26_widths = []
++        self._mimo26_full_block = int(self.block_size)
++        self._mimo26_narrow_active = False
++        if os.environ.get("MIMO26_DFLASH_ADAPTIVE", "0") != "1":
++            return
++        small = int(os.environ.get("MIMO26_DFLASH_SMALL_WIDTH", "4"))
++        self._mimo26_lo = float(os.environ.get("MIMO26_DFLASH_LO", "1.8"))
++        self._mimo26_hi = float(os.environ.get("MIMO26_DFLASH_HI", "2.6"))
++        self._mimo26_alpha = float(os.environ.get("MIMO26_DFLASH_ALPHA", "0.3"))
++        full = self._mimo26_full_block
++        tmr = self.target_worker.model_runner
++        if not (1 < small < full) or tmr.decode_cuda_graph_runner is None:
++            logger.warning("mimo26: adaptive DFLASH verify width disabled (small=%d full=%d)", small, full)
++            return
++        original = tmr.decode_num_tokens_per_req
++        tmr.decode_num_tokens_per_req = lambda **kwargs: small
++        try:
++            runner = tmr._decode_cuda_graph_runner_cls()(tmr)
++        finally:
++            tmr.decode_num_tokens_per_req = original
++        tmr.mimo26_alt_verify_runners = {small: runner}
++        self._mimo26_widths = [small]
++        logger.info(
++            "mimo26: adaptive DFLASH verify width %d/%d (lo=%.2f hi=%.2f alpha=%.2f)",
++            small, full, self._mimo26_lo, self._mimo26_hi, self._mimo26_alpha,
++        )
++
++    def _mimo26_choose_width(self, batch) -> int:
++        """Full block if any request is accepting well, else the narrow width.
++
++        Uses the scheduler's per-request counters (identical on every TP rank, one
++        step behind under overlap scheduling): an EMA of correct drafts per verify,
++        with hysteresis between MIMO26_DFLASH_LO and MIMO26_DFLASH_HI.
++        """
++        full = self._mimo26_full_block
++        if getattr(self, "_selector_sample", None) is not None:
++            return full
++        use_full = False
++        for req in batch.reqs:
++            state = getattr(req, "_mimo26_adaptive", None)
++            verify_ct = int(getattr(req, "spec_verify_ct", 0))
++            correct = int(getattr(req, "spec_num_correct_drafts", 0))
++            if state is None:
++                state = [verify_ct, correct, None, True]
++                req._mimo26_adaptive = state
++            steps = verify_ct - state[0]
++            if steps > 0:
++                rate = (correct - state[1]) / steps
++                ema = state[2]
++                state[2] = rate if ema is None else (1.0 - self._mimo26_alpha) * ema + self._mimo26_alpha * rate
++                state[0], state[1] = verify_ct, correct
++            if state[2] is not None:
++                if state[3] and state[2] < self._mimo26_lo:
++                    state[3] = False
++                elif not state[3] and state[2] >= self._mimo26_hi:
++                    state[3] = True
++            use_full = use_full or state[3]
++        return full if use_full else self._mimo26_widths[0]
+ 
+     def _prewarm_batch_size(self, block_size: int) -> int:
+         """Largest batch the non-greedy verify path can see in one step."""
+@@ -2234,6 +2295,16 @@ class DFlashWorkerV2(BaseSpecWorker):
+         pp_proxy_tensors=None,
+     ) -> GenerationBatchResult:
+         self._validate_phase1_sampling_support(batch)
++        if getattr(self, "_mimo26_narrow_active", False):
++            # mimo26: undo the previous step's narrow verify width.
++            self.block_size = self._mimo26_full_block
++            self._use_triton_accept_bonus = self._mimo26_saved_triton
++            self._mimo26_narrow_active = False
++        if getattr(self, "_mimo26_default_runner", None) is not None:
++            self.target_worker.model_runner.decode_cuda_graph_runner = (
++                self._mimo26_default_runner
++            )
++            self._mimo26_default_runner = None
+ 
+         if batch.forward_mode.is_extend() or batch.is_extend_in_batch:
+             # Target prefill: capture DFlash aux hidden states for prompt tokens.
+@@ -2633,6 +2704,29 @@ class DFlashWorkerV2(BaseSpecWorker):
+         draft_tokens[:, 0].copy_(block_ids[:, 0])
+         draft_tokens[:, 1:].copy_(draft_next)
+ 
++        # mimo26: adaptive verify width. The draft always proposes a full block;
++        # low-acceptance steps verify only the first k columns, which reads far
++        # fewer MoE expert bytes per step.
++        if getattr(self, "_mimo26_widths", None):
++            verify_width = self._mimo26_choose_width(batch)
++            if verify_width < block_size:
++                draft_tokens = draft_tokens[:, :verify_width].contiguous()
++                positions = positions_2d[:, :verify_width].reshape(-1)
++                verify_out_cache_loc_2d = verify_out_cache_loc_2d[:, :verify_width].contiguous()
++                verify_out_cache_loc = verify_out_cache_loc_2d.reshape(-1)
++                block_size = verify_width
++                self._mimo26_saved_triton = self._use_triton_accept_bonus
++                self._use_triton_accept_bonus = False
++                self.block_size = verify_width
++                self._mimo26_narrow_active = True
++                # Verify planning and replay both read decode_cuda_graph_runner;
++                # point it at the narrow graphs for this step only.
++                target_runner = self.target_worker.model_runner
++                self._mimo26_default_runner = target_runner.decode_cuda_graph_runner
++                target_runner.decode_cuda_graph_runner = (
++                    target_runner.mimo26_alt_verify_runners[verify_width]
++                )
++
+         # Must stay ahead of the target verify launch below.
+         grammar_tree = (
+             GrammarTree.from_linear_chain(draft_tokens) if batch.has_grammar else None
+@@ -2697,6 +2791,11 @@ class DFlashWorkerV2(BaseSpecWorker):
+             is_verify=True,
+             skip_attn_backend_init=True if not _is_npu else None,
+         )
++        if getattr(self, "_mimo26_default_runner", None) is not None:
++            self.target_worker.model_runner.decode_cuda_graph_runner = (
++                self._mimo26_default_runner
++            )
++            self._mimo26_default_runner = None
+         logits_output = target_out.logits_output
+         can_run_cuda_graph = target_out.can_run_cuda_graph
+ 
+diff --git a/python/sglang/srt/speculative/spec_info.py b/python/sglang/srt/speculative/spec_info.py
+index 1cb443feb8..c0ae84c1ae 100644
+--- a/python/sglang/srt/speculative/spec_info.py
++++ b/python/sglang/srt/speculative/spec_info.py
+@@ -510,7 +510,12 @@ def create_dummy_verify_input(
+         spec_info = DFlashVerifyInput(
+             draft_token=None,
+             positions=None,
+-            draft_token_num=spec.speculative_num_draft_tokens,
++            # mimo26: a narrower target-verify runner captures with its own width.
++            draft_token_num=(
++                spec.speculative_num_draft_tokens
++                if is_draft_worker
++                else num_tokens_per_req
++            ),
+             custom_mask=None,
+             capture_hidden_mode=(
+                 CaptureHiddenMode.NULL if is_draft_worker else CaptureHiddenMode.FULL

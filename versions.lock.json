@@ -69,6 +69,10 @@
     {
       "file": "mimo26-fp8-oproj.diff",
       "origin": "this repo"
+    },
+    {
+      "file": "mimo26-dflash-adaptive.diff",
+      "origin": "this repo"
     }
   ],
   "b12x": {
@@ -77,12 +81,13 @@
     "use": "RoCEnante TP8 all-reduce only"
   },
   "image": {
-    "tag": "mimo26-spark:a9",
-    "id": "sha256:cab4f3377c570c7971b2c58b7ac722f3ea214b069cf51c84480de888d0a4f808"
+    "tag": "mimo26-spark:a13",
+    "id": "sha256:7d0b41517ae411b8f48eaed02236d6d2c5c7968c8d5eac9d1076fa9ce08af6ca"
   },
   "fp8_tile_tables": "patches/fp8-configs (GB10, tuned 2026-09-24)",
   "serving_env": {
     "MIMO26_FP8_OPROJ": "1",
-    "MIMO26_FP8_DRAFT": "1"
+    "MIMO26_FP8_DRAFT": "1",
+    "MIMO26_DFLASH_ADAPTIVE": "1"
   }
 }

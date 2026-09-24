@@ -14,38 +14,50 @@ OpenAI-compatible API.
 
 ## Performance
 
-Measured **24 September 2026** on build `a9` (TP8 · EP1 · Marlin W4A16 MoE ·
-DFlash-8 · RoCEnante all-reduce · FA4 prefill · FP8 `o_proj` and DFlash draft ·
-GB10-tuned FP8 GEMM tiles). Benchmark prompts and metrics are identical to the
+Measured **24 September 2026** on build `a13` (TP8 · EP1 · Marlin W4A16 MoE ·
+DFlash-8 with **per-request adaptive verify width** · RoCEnante all-reduce · FA4
+prefill and verify · FP8 `o_proj` and DFlash draft · GB10-tuned FP8 GEMM tiles).
+Benchmark prompts and metrics are identical to the
 [DeepSeek V4.1 Flash deployment](https://github.com/rhys101/DeepSeek-V4.1-Flash-vLLM-DGX-Spark-8)
 (`bench/mimobench.py`, temperature 0, thinking off).
 
-| Per-stream decode tok/s | C1 | C8 | a6 C1 | a6 C8 |
+| Per-stream decode tok/s | C1 | C8 | a9 C1 | a9 C8 |
 |---|---:|---:|---:|---:|
-| format | **111.2** | 45.8 | 107.0 | 43.2 |
-| coding | 88.9 | 41.3 | 91.4 | 40.1 |
-| math | 87.9 | 33.8 | 78.8 | 36.0 |
-| json | 67.1 | 29.0 | 68.2 | 30.2 |
-| reasoning | 58.8 | 19.2 | 49.2 | 18.0 |
-| summary | 41.8 | 15.4 | 34.3 | 14.9 |
-| prose | 32.3 | 13.2 | 32.3 | 11.9 |
-| narrative | 28.9 | 10.2 | 26.3 | 9.4 |
-| **mean of 8 categories** | **64.6** | 26.0 | 60.9 | 25.4 |
-| **all 8 categories, aggregate** | 55.5 | **176.5** | 52.9 | 171.1 |
+| format | **99.5** | 46.3 | 111.2 | 45.8 |
+| json | 91.2 | 33.6 | 67.1 | 29.0 |
+| coding | 91.1 | 42.3 | 88.9 | 41.3 |
+| math | 86.6 | 37.7 | 87.9 | 33.8 |
+| reasoning | 56.9 | 20.4 | 58.8 | 19.2 |
+| summary | 51.3 | 16.9 | 41.8 | 15.4 |
+| prose | 40.3 | 16.9 | 32.3 | 13.2 |
+| narrative | 36.0 | 14.1 | 28.9 | 10.2 |
+| **mean of 8 categories** | **69.1** | 28.5 | 64.6 | 26.0 |
+| **all 8 categories, aggregate** | 59.9 | **190.8** | 55.5 | 176.5 |
 
 Single benchmark requests move ±20–30% between builds because greedy output, and
 with it DFlash acceptance, changes with small numeric differences. Compare the
 means, and the repeatable long-extraction measurement:
 
 Long structured extraction (four CSV→JSON tasks, cold cache, end to end,
-prefill included): **101.7 tok/s** on a9, 95.0 tok/s on a6.
+prefill included, 3 repeats, 12/12 correct): **104.7 tok/s** on a13, 101.7 on
+a9, 95.0 on a6.
 
 Cold prefill (unique prefix, TTFT-based, a6): **1,899 tok/s** at 5K tokens, 1,629
 at 20K, 1,720 at 81K, 1,515 at 163K.
 
-Free-form prose is where DFlash's draft is weakest. The EAGLE-MTP profile
-(`SPEC_ALGO=EAGLE`, 3 steps × 4 tokens) trades structured speed for prose:
-prose 35.0 / narrative 36.5 tok/s at C1, but coding 63.1.
+**Adaptive verify width.** DFlash drafts 8 tokens per step, but on free prose
+only ~2 of them are accepted, so most of the verify step's expert reads are
+wasted. With `MIMO26_DFLASH_ADAPTIVE=1` (the default profile) each request keeps
+a running average of accepted drafts per step; while every request in the batch
+is below 1.8 the target verifies only the first 4 draft tokens, and it returns to
+8 once any request climbs above 2.6. Against a9, prose, narrative and summaries
+gain 23–25% at C1 and the C8 aggregate rises 8%. Code and math mostly keep the full
+window; format is 11% lower at C1, so some high-acceptance steps still narrow.
+a13 also keeps the draft's fused `qkv` in BF16, which re-enables DFlash's fused KV
+materialization; part of the json gain likely comes from that. DFlash now beats
+the EAGLE-MTP profile (`SPEC_ALGO=EAGLE`, 3 steps × 4 tokens: prose 35.0,
+narrative 36.5, coding 63.1) on prose and roughly matches it on narrative, without
+its loss on code.
 [All builds and the experiment trail](docs/progress.md).
 
 ## Validation
@@ -53,7 +65,7 @@ prose 35.0 / narrative 36.5 tok/s at C1, but coding 63.1.
 | Check | Result |
 |---|---|
 | Smoke: arithmetic, reasoning split, tool call, image (red/blue halves) | pass on every build |
-| GSM8K, first 200 test questions, greedy, thinking off | **97.5%** (a9, a7), 96.5% (a6), 97.0% (a4-marlin, a5-eagle) |
+| GSM8K, first 200 test questions, greedy, thinking off | **98.0%** (a13), 97.5% (a9, a7), 96.5% (a6), 97.0% (a4-marlin, a5-eagle) |
 | Needle retrieval, 3 facts | pass at 127,803 tokens (a5, a6) and 244,168 tokens (a5) |
 | Mixed workload: 300-integer JSON-schema generation + 3 short requests + forced tool call admitted mid-decode, ×3 | 3/3 pass (a5 EAGLE, a6 DFlash) |
 | Model copy | identical sha256 manifest (155 files) on all 8 nodes |
@@ -64,7 +76,7 @@ long unattended reliability. Audio/video input is not validated.
 
 ## Where the time goes
 
-Decode, one DFlash verify step (8 tokens), rank 0, a9 (`runtime/profile_decode.sh`).
+Decode, one full-width DFlash verify step (8 tokens), rank 0, a9 (`runtime/profile_decode.sh`).
 The real step is ~70 ms; GPU idle time is under 1% (`runtime/trace_gaps.py`).
 
 | | ms/step | share |
@@ -77,7 +89,8 @@ The real step is ~70 ms; GPU idle time is under 1% (`runtime/trace_gaps.py`).
 
 Against a6, FP8 `o_proj` and FP8 draft weights take the BF16/FP8 GEMM share from
 24.3 to 19.0 ms per step. MoE only gets cheaper with fewer verified tokens or
-fewer bits per expert.
+fewer bits per expert; adaptive verify width (a13) takes the first route on
+low-acceptance steps.
 
 Prefill is bound by the fabric (ring all-reduce tops out at ~23.5 GB/s bus
 bandwidth over 2 × 200G; ~32%) and Marlin at large M (~34%).
@@ -122,9 +135,10 @@ Boot takes 12–14 minutes, mostly weight loading.
 ## What is in the image
 
 Pinned base `lmsysorg/sglang` dev-cu13 (sglang `06008c17`, which carries MiMo-V2.6
-day-0 support, sglang#40448) plus ten patches: six open upstream PRs, the
-RoCEnante all-reduce hook ported from the DeepSeek build, and three local changes
-(fast expert load, Marlin zero-fill skip, optional FP8 serving of BF16 linears).
+day-0 support, sglang#40448) plus eleven patches: six open upstream PRs, the
+RoCEnante all-reduce hook ported from the DeepSeek build, and four local changes
+(fast expert load, Marlin zero-fill skip, optional FP8 serving of BF16 linears,
+adaptive DFlash verify width).
 It also carries Triton block-FP8 tile tables tuned on GB10 for MiMo's per-rank
 shapes (`patches/fp8-configs/`).
 See [patches/README.md](patches/README.md) and [versions.lock.json](versions.lock.json).
