@@ -1,0 +1,215 @@
+{
+ "label": "a13-prefill-r1",
+ "prompt_set": "v1",
+ "model": "mimo-v2.6-pro",
+ "notes": "",
+ "started": "2026-09-24T14:22:33Z",
+ "batches": [
+  {
+   "c": 1,
+   "category": "coding",
+   "wall_s": 2.277,
+   "tokens": 186,
+   "agg_tok_s": 81.68,
+   "per_stream_tok_s": 91.06,
+   "ttft_mean_s": 0.245,
+   "requests": [
+    {
+     "ttft_s": 0.2446129322052002,
+     "total_s": 2.276228904724121,
+     "completion_tokens": 186,
+     "prompt_tokens": 49,
+     "decode_tok_s": 91.06051660473301,
+     "chars": 595
+    }
+   ]
+  },
+  {
+   "c": 1,
+   "category": "json",
+   "wall_s": 1.977,
+   "tokens": 137,
+   "agg_tok_s": 69.29,
+   "per_stream_tok_s": 81.01,
+   "ttft_mean_s": 0.298,
+   "requests": [
+    {
+     "ttft_s": 0.29776716232299805,
+     "total_s": 1.9764854907989502,
+     "completion_tokens": 137,
+     "prompt_tokens": 70,
+     "decode_tok_s": 81.01418665242637,
+     "chars": 428
+    }
+   ]
+  },
+  {
+   "c": 1,
+   "category": "narrative",
+   "wall_s": 4.554,
+   "tokens": 154,
+   "agg_tok_s": 33.82,
+   "per_stream_tok_s": 35.51,
+   "ttft_mean_s": 0.244,
+   "requests": [
+    {
+     "ttft_s": 0.24448728561401367,
+     "total_s": 4.553091764450073,
+     "completion_tokens": 154,
+     "prompt_tokens": 47,
+     "decode_tok_s": 35.510337686259824,
+     "chars": 637
+    }
+   ]
+  },
+  {
+   "c": 1,
+   "category": "prose",
+   "wall_s": 3.45,
+   "tokens": 129,
+   "agg_tok_s": 37.39,
+   "per_stream_tok_s": 39.74,
+   "ttft_mean_s": 0.229,
+   "requests": [
+    {
+     "ttft_s": 0.22874689102172852,
+     "total_s": 3.449312210083008,
+     "completion_tokens": 129,
+     "prompt_tokens": 44,
+     "decode_tok_s": 39.744575041660404,
+     "chars": 581
+    }
+   ]
+  },
+  {
+   "c": 1,
+   "category": "math",
+   "wall_s": 2.194,
+   "tokens": 170,
+   "agg_tok_s": 77.5,
+   "per_stream_tok_s": 89.07,
+   "ttft_mean_s": 0.296,
+   "requests": [
+    {
+     "ttft_s": 0.29557371139526367,
+     "total_s": 2.192962884902954,
+     "completion_tokens": 170,
+     "prompt_tokens": 82,
+     "decode_tok_s": 89.06976089020833,
+     "chars": 329
+    }
+   ]
+  },
+  {
+   "c": 1,
+   "category": "reasoning",
+   "wall_s": 3.892,
+   "tokens": 200,
+   "agg_tok_s": 51.39,
+   "per_stream_tok_s": 55.32,
+   "ttft_mean_s": 0.294,
+   "requests": [
+    {
+     "ttft_s": 0.29409146308898926,
+     "total_s": 3.891150712966919,
+     "completion_tokens": 200,
+     "prompt_tokens": 69,
+     "decode_tok_s": 55.32296973055234,
+     "chars": 774
+    }
+   ]
+  },
+  {
+   "c": 1,
+   "category": "summary",
+   "wall_s": 2.688,
+   "tokens": 104,
+   "agg_tok_s": 38.69,
+   "per_stream_tok_s": 47.7,
+   "ttft_mean_s": 0.528,
+   "requests": [
+    {
+     "ttft_s": 0.5276739597320557,
+     "total_s": 2.686819553375244,
+     "completion_tokens": 104,
+     "prompt_tokens": 309,
+     "decode_tok_s": 47.704054929526606,
+     "chars": 562
+    }
+   ]
+  },
+  {
+   "c": 1,
+   "category": "format",
+   "wall_s": 1.326,
+   "tokens": 116,
+   "agg_tok_s": 87.49,
+   "per_stream_tok_s": 111.87,
+   "ttft_mean_s": 0.297,
+   "requests": [
+    {
+     "ttft_s": 0.29696178436279297,
+     "total_s": 1.324944019317627,
+     "completion_tokens": 116,
+     "prompt_tokens": 92,
+     "decode_tok_s": 111.86963751864127,
+     "chars": 221
+    }
+   ]
+  },
+  {
+   "c": 1,
+   "category": "ceiling_count",
+   "wall_s": 2.315,
+   "tokens": 256,
+   "agg_tok_s": 110.59,
+   "per_stream_tok_s": 121.74,
+   "ttft_mean_s": 0.22,
+   "requests": [
+    {
+     "ttft_s": 0.2195281982421875,
+     "total_s": 2.314086437225342,
+     "completion_tokens": 256,
+     "prompt_tokens": 36,
+     "decode_tok_s": 121.74404857980693,
+     "chars": 256
+    }
+   ]
+  }
+ ],
+ "prefill": [
+  {
+   "target": 2000,
+   "prompt_tokens": 5115,
+   "ttft_s": 2.7,
+   "prefill_tok_s": 1894.4
+  },
+  {
+   "target": 8000,
+   "prompt_tokens": 20264,
+   "ttft_s": 12.748,
+   "prefill_tok_s": 1589.6
+  },
+  {
+   "target": 32000,
+   "prompt_tokens": 81292,
+   "ttft_s": 48.406,
+   "prefill_tok_s": 1679.4
+  },
+  {
+   "target": 64000,
+   "prompt_tokens": 162620,
+   "ttft_s": 108.486,
+   "prefill_tok_s": 1499.0
+  }
+ ],
+ "finished": "2026-09-24T14:25:55Z",
+ "headline": [
+  {
+   "level": "C1",
+   "agg_tok_s": 59.66,
+   "per_stream_tok_s": 68.91,
+   "ttft_mean_s": 0.304
+  }
+ ]
+}
