@@ -23,12 +23,17 @@ COPY patches/sglang/ /opt/mimo26/patches/sglang/
 # DeepSeek V4.1 SG17 build; enabled at runtime with SGLANG8_ROCE_ALLREDUCE=1).
 # mimo26-fast-expert-load: skip experts owned by other EP ranks before reading them.
 # mimo26-marlin-skip-zero-fill: no zero-fill of Marlin MoE scratch when every expert is local.
-ARG SGLANG_PRS="40722 40888 38142 40633 40665 29858 rocenante mimo26-fast-expert-load mimo26-marlin-skip-zero-fill"
+# mimo26-fp8-oproj: optional (MIMO26_FP8_OPROJ=1) block-FP8 serving of the BF16 attention o_proj.
+ARG SGLANG_PRS="40722 40888 38142 40633 40665 29858 rocenante mimo26-fast-expert-load mimo26-marlin-skip-zero-fill mimo26-fp8-oproj"
 RUN cd /sgl-workspace/sglang \
  && test "$(git rev-parse HEAD)" = 06008c170dae333e22caceb51f36224071f9b5b3 \
  && for pr in ${SGLANG_PRS}; do echo "applying $pr"; git apply /opt/mimo26/patches/sglang/$pr.diff || exit 1; done \
  && printf '%s\n' ${SGLANG_PRS} > /opt/mimo26/applied-prs.txt \
  && PYTHONPATH=/opt/b12x python3 -c "import sglang.srt.models.mimo_v2, sglang.srt.speculative.dflash_worker_v2, sglang.srt.distributed.device_communicators.pynccl; print('import ok')"
+
+# Triton block-FP8 tile tables tuned on GB10 for MiMo's per-rank shapes (decode M<=64;
+# M>=256 entries repeat SGLang's default tile so prefill keeps its behaviour).
+COPY patches/fp8-configs/ /sgl-workspace/sglang/python/sglang/kernels/ops/quantization/configs/
 
 COPY runtime/ /opt/mimo26/runtime/
 

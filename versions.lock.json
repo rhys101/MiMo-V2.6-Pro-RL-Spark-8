@@ -1,22 +1,88 @@
 {
-  "recorded": "2026-09-23",
-  "model": {"repo": "XiaomiMiMo/MiMo-V2.6-Pro-RL", "revision": "73875d00b30a89ef8cc353a0b60b0e9f9561952d",
-            "files": 155, "sha256_manifest_note": "identical sha256 manifest on all 8 nodes (runtime check, not published)"},
+  "recorded": "2026-09-24",
+  "model": {
+    "repo": "XiaomiMiMo/MiMo-V2.6-Pro-RL",
+    "revision": "73875d00b30a89ef8cc353a0b60b0e9f9561952d",
+    "files": 155,
+    "sha256_manifest_note": "identical sha256 manifest on all 8 nodes (runtime check, not published)"
+  },
   "base_image": "lmsysorg/sglang@sha256:5921361fcf358cdde4df1968c941c14157f418613b099ad7f3e5aeed6427ae15",
   "base_image_tag_at_pin": "dev-cu13 = nightly-dev-cu13-20260923-06008c17 (linux/arm64)",
   "sglang_commit": "06008c170dae333e22caceb51f36224071f9b5b3",
-  "stack": {"torch": "2.13.0+cu130", "flashinfer": "0.6.18", "nccl": "2.30.7", "triton": "3.7.1", "cutlass_dsl": "4.6.2"},
+  "stack": {
+    "torch": "2.13.0+cu130",
+    "flashinfer": "0.6.18",
+    "nccl": "2.30.7",
+    "triton": "3.7.1",
+    "cutlass_dsl": "4.6.2"
+  },
   "sglang_patches_in_order": [
-    {"file": "40722.diff", "pr": 40722, "head": "4c02e4f52c95b46494c7b3a9573c6ddc017e866f", "state": "open"},
-    {"file": "40888.diff", "pr": 40888, "head": "21b619e144d50cd5b1401e1d58afc4300ba0157e", "state": "open"},
-    {"file": "38142.diff", "pr": 38142, "head": "d1cf0788c4279a044fd1206ef75960a1600b6ae0", "state": "open"},
-    {"file": "40633.diff", "pr": 40633, "head": "9fe1d0aa967ef0de71d3e0cf99d1eaf68a77bbbc", "state": "open"},
-    {"file": "40665.diff", "pr": 40665, "head": "6aedeeee929fbd84a7116a867eb27ebff1702dc3", "state": "open"},
-    {"file": "29858.diff", "pr": 29858, "head": "0314d9de3a1d2d814781bdaab65f4ee4fc81cfef", "state": "open", "local_change": "ported to current update_sliding_window_buffer signature"},
-    {"file": "rocenante.diff", "origin": "DeepSeek-V4.1-Flash-vLLM-DGX-Spark-8 SG17 sglang-rocenante.patch, ported to 06008c17"},
-    {"file": "mimo26-fast-expert-load.diff", "origin": "this repo"},
-    {"file": "mimo26-marlin-skip-zero-fill.diff", "origin": "this repo"}
+    {
+      "file": "40722.diff",
+      "pr": 40722,
+      "head": "4c02e4f52c95b46494c7b3a9573c6ddc017e866f",
+      "state": "open"
+    },
+    {
+      "file": "40888.diff",
+      "pr": 40888,
+      "head": "21b619e144d50cd5b1401e1d58afc4300ba0157e",
+      "state": "open"
+    },
+    {
+      "file": "38142.diff",
+      "pr": 38142,
+      "head": "d1cf0788c4279a044fd1206ef75960a1600b6ae0",
+      "state": "open"
+    },
+    {
+      "file": "40633.diff",
+      "pr": 40633,
+      "head": "9fe1d0aa967ef0de71d3e0cf99d1eaf68a77bbbc",
+      "state": "open"
+    },
+    {
+      "file": "40665.diff",
+      "pr": 40665,
+      "head": "6aedeeee929fbd84a7116a867eb27ebff1702dc3",
+      "state": "open"
+    },
+    {
+      "file": "29858.diff",
+      "pr": 29858,
+      "head": "0314d9de3a1d2d814781bdaab65f4ee4fc81cfef",
+      "state": "open",
+      "local_change": "ported to current update_sliding_window_buffer signature"
+    },
+    {
+      "file": "rocenante.diff",
+      "origin": "DeepSeek-V4.1-Flash-vLLM-DGX-Spark-8 SG17 sglang-rocenante.patch, ported to 06008c17"
+    },
+    {
+      "file": "mimo26-fast-expert-load.diff",
+      "origin": "this repo"
+    },
+    {
+      "file": "mimo26-marlin-skip-zero-fill.diff",
+      "origin": "this repo"
+    },
+    {
+      "file": "mimo26-fp8-oproj.diff",
+      "origin": "this repo"
+    }
   ],
-  "b12x": {"path": "third_party/b12x", "origin": "frozen SG17 bundle from DeepSeek-V4.1-Flash-vLLM-DGX-Spark-8 (b12x 85d3681 + RoCEnante 081b2359)", "use": "RoCEnante TP8 all-reduce only"},
-  "image": {"tag": "mimo26-spark:a6", "id": "sha256:7ef5b0d5201be1afac6284e7696b92ce8351f8ec08476e8deb9605dd055652dd"}
+  "b12x": {
+    "path": "third_party/b12x",
+    "origin": "frozen SG17 bundle from DeepSeek-V4.1-Flash-vLLM-DGX-Spark-8 (b12x 85d3681 + RoCEnante 081b2359)",
+    "use": "RoCEnante TP8 all-reduce only"
+  },
+  "image": {
+    "tag": "mimo26-spark:a9",
+    "id": "sha256:cab4f3377c570c7971b2c58b7ac722f3ea214b069cf51c84480de888d0a4f808"
+  },
+  "fp8_tile_tables": "patches/fp8-configs (GB10, tuned 2026-09-24)",
+  "serving_env": {
+    "MIMO26_FP8_OPROJ": "1",
+    "MIMO26_FP8_DRAFT": "1"
+  }
 }

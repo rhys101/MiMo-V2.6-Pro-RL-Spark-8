@@ -12,7 +12,10 @@ story, 256 tokens) and only compare builds with each other. Benchmark figures ar
 | a4 | + fast expert load; **EP1** (TP-sharded experts) | 58.3 / 23.4 | 72.2 | 48.9 | **171.6** | balanced expert load, less all-reduce wait |
 | a4-marlin | **Marlin W4A16 MoE** | 67.2 / 27.0 | 78.0 | 57.6 | 161.8 | GSM8K-200 97.0%; json 50.8 → 68.6 |
 | a5-eagle | EAGLE-MTP 3×4 instead of DFlash-8 (+ ported #29858) | 56.9 / 38.1 | 63.1 | 51.0 | 161.1 | prose 35.0, narrative 36.5; GSM8K 97.0% |
-| **a6** | DFlash-8 + Marlin zero-fill skip + **FA4 prefill** | 72.2 / 27.4 | **91.4** | **60.9** | 171.1 | GSM8K 96.5%; prefill 1.5–1.9K tok/s |
+| a6 | DFlash-8 + Marlin zero-fill skip + **FA4 prefill** | 72.2 / 27.4 | **91.4** | **60.9** | 171.1 | GSM8K 96.5%; prefill 1.5–1.9K tok/s |
+| a6-b4 | DFlash verify window 4 instead of 8 | — | 65.8 | 50.7 | 174.2 | prose 32.3 → 41.3, summary +21%; code −28%, format −42% |
+| a7 | + **FP8 `o_proj`** (block 128×128, fp32 scales) | 74.5 / 28.5 | 86.2 | 62.2 | 170.7 | GSM8K 97.5%; BF16+FP8 GEMMs 24.3 → 21.1 ms/step |
+| **a9** | + FP8 DFlash draft linears + GB10-tuned FP8 tiles | 70.9 / 29.1 | 88.9 | **64.6** | **176.5** | GSM8K 97.5%; long extraction **101.7**; GEMMs 19.0 ms/step |
 
 ## Findings
 
@@ -33,6 +36,18 @@ story, 256 tokens) and only compare builds with each other. Benchmark figures ar
   and cut attention in an 18K prefill from 1.27 s to 0.30 s.
 - **Weight loading** is 8–13 minutes and CPU-bound in the loader, not disk bound
   (direct reads run at 10.4 GB/s). Not yet fixed for EP1.
+- **GPU idle is under 1%.** The real verify step (~70 ms on a9) matches kernel plus
+  all-reduce time; apparent 10–25 ms eager NCCL "waits" in single-rank profiles
+  were profiler skew between ranks, not a slow node.
+- **FP8 GEMM backends other than Triton do not fit the checkpoint.** FlashInfer
+  CUTLASS / CUTLASS groupwise need N multiples of 128; the fused qkv is N=3392.
+- **GB10 had no Triton block-FP8 tables.** Tuning N=3392/6144/4096 for M 1–64
+  (`patches/fp8-configs/`) changes little on its own; the gain is from halving bytes.
+- **Verify window is workload-dependent.** 4 tokens wins prose and summaries by
+  20–28% and loses code/format by 28–42%; a per-request window is the next step.
+- A per-step thinking/answer split (`eval/phase_accept.py`, `results/phase/`):
+  easy prompts spend ~3% of output in (English) reasoning; hard ones 61–70%, with
+  reasoning accept length ~3.5 and Welsh prose answers the lowest (~1.8).
 
 ## Invalid or excluded measurements
 
@@ -44,6 +59,7 @@ story, 256 tokens) and only compare builds with each other. Benchmark figures ar
 
 ## Not done / next
 
-- A Triton small-M BF16 kernel for `o_proj`: microbenchmark says ~3 ms/step (3.5%).
+- Per-request DFlash verify window (4 or 8 tokens from recent acceptance).
+- A faster small-M block-FP8 GEMM (Triton reaches ~205 GB/s of ~260).
 - Newer b12x RoCEnante (prepared-plan API, traffic class) in place of the SG17 snapshot.
 - Loader speed for EP1, prefill MoE at large M, audio/video validation, long soak.

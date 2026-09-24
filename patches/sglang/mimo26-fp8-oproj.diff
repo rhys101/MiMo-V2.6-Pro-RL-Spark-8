@@ -1,0 +1,106 @@
+diff --git a/python/sglang/srt/layers/quantization/mimo26_fp8_serve.py b/python/sglang/srt/layers/quantization/mimo26_fp8_serve.py
+new file mode 100644
+index 0000000000..2aa32bfa98
+--- /dev/null
++++ b/python/sglang/srt/layers/quantization/mimo26_fp8_serve.py
+@@ -0,0 +1,50 @@
++"""Serve checkpoint-BF16 linear layers as 128x128 block FP8 (MiMo-V2.6 on SM121).
++
++Only the module quant_method is swapped, so the parallel linear keeps its own
++forward: input splitting, bias handling and any in-layer all-reduce are unchanged.
++Scales are fp32 amax/448 per block; the GEMM is the same Triton block-FP8 kernel
++that serves the checkpoint FP8 layers.
++"""
++import logging
++
++import torch
++
++logger = logging.getLogger(__name__)
++
++
++class _BlockFp8Apply:
++    def __init__(self, base):
++        self.base = base
++
++    def apply(self, layer, x, bias=None):
++        from sglang.srt.layers.quantization.fp8_utils import triton_w8a8_block_fp8_linear
++
++        out = triton_w8a8_block_fp8_linear(x, layer._mimo26_fp8_weight, [128, 128], layer._mimo26_fp8_scale)
++        return out if bias is None else out + bias
++
++    def __getattr__(self, name):
++        return getattr(self.base, name)
++
++
++def serve_linear_as_block_fp8(mod) -> bool:
++    w = getattr(mod, "weight", None)
++    if w is None or w.dtype != torch.bfloat16 or w.dim() != 2 or not hasattr(mod, "quant_method"):
++        return False
++    if type(mod.quant_method).__name__ != "UnquantizedLinearMethod":
++        return False
++    out_f, in_f = w.shape
++    if out_f % 128 or in_f % 128:
++        return False
++    blocks = w.data.float().view(out_f // 128, 128, in_f // 128, 128)
++    scale = (blocks.abs().amax(dim=(1, 3), keepdim=True) / 448.0).clamp(min=1e-12)
++    q = (blocks / scale).to(torch.float8_e4m3fn).view(out_f, in_f).contiguous()
++    mod.register_buffer("_mimo26_fp8_weight", q, persistent=False)
++    mod.register_buffer("_mimo26_fp8_scale", scale.view(out_f // 128, in_f // 128).contiguous(), persistent=False)
++    mod.quant_method = _BlockFp8Apply(mod.quant_method)
++    return True
++
++
++def serve_modules_as_block_fp8(model, predicate, label):
++    n = sum(serve_linear_as_block_fp8(m) for name, m in model.named_modules() if predicate(name))
++    logger.info("mimo26: serving %d %s linear layers as block FP8", n, label)
++    return n
+diff --git a/python/sglang/srt/models/dflash.py b/python/sglang/srt/models/dflash.py
+index 5722b43d45..cd5c6cc6ae 100644
+--- a/python/sglang/srt/models/dflash.py
++++ b/python/sglang/srt/models/dflash.py
+@@ -880,6 +880,18 @@ class DFlashDraftModel(nn.Module):
+                     f"{sorted(missing)}."
+                 )
+ 
++        import os as _os
++
++        if _os.environ.get("MIMO26_FP8_DRAFT", "0") == "1":
++            from sglang.srt.layers.quantization.mimo26_fp8_serve import serve_modules_as_block_fp8
++
++            serve_modules_as_block_fp8(
++                self,
++                lambda n: n.startswith("layers.")
++                and n.rsplit(".", 1)[-1] in ("qkv_proj", "o_proj", "gate_up_proj", "down_proj"),
++                "DFlash draft",
++            )
++
+ 
+ class DFlashLagunaAttention(DFlashAttention):
+     """Laguna DFlash attention with the trained Laguna softplus gate."""
+diff --git a/python/sglang/srt/models/mimo_v2.py b/python/sglang/srt/models/mimo_v2.py
+index 6f67bef0d5..bb48d20564 100644
+--- a/python/sglang/srt/models/mimo_v2.py
++++ b/python/sglang/srt/models/mimo_v2.py
+@@ -13,6 +13,7 @@
+ # ==============================================================================
+ 
+ import logging
++import os
+ import math
+ import re
+ from array import array
+@@ -1708,6 +1709,14 @@ class MiMoV2ForCausalLM(nn.Module, AudioEncoderMixin):
+                 expected_fused_tp_size,
+                 config=self.config,
+             )
++        if os.environ.get("MIMO26_FP8_OPROJ", "0") == "1":
++            from sglang.srt.layers.quantization.mimo26_fp8_serve import serve_modules_as_block_fp8
++
++            serve_modules_as_block_fp8(
++                self,
++                lambda n: n.startswith("model.layers.") and n.endswith("self_attn.o_proj"),
++                "attention o_proj",
++            )
+ 
+     def get_embed_and_head(self):
+         assert self.model is not None and self.lm_head is not None, (

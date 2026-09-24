@@ -1,0 +1,274 @@
+{
+ "summary": {
+  "cy": {
+   "reasoning_tokens": 11674,
+   "reasoning_accept_len": 3.75,
+   "answer_tokens": 3584,
+   "answer_accept_len": 2.77,
+   "reasoning_share": 0.765
+  },
+  "fr": {
+   "reasoning_tokens": 13330,
+   "reasoning_accept_len": 3.56,
+   "answer_tokens": 3095,
+   "answer_accept_len": 3.8,
+   "reasoning_share": 0.812
+  },
+  "en": {
+   "reasoning_tokens": 11513,
+   "reasoning_accept_len": 3.46,
+   "answer_tokens": 3349,
+   "answer_accept_len": 3.15,
+   "reasoning_share": 0.775
+  },
+  "all": {
+   "reasoning_tokens": 36517,
+   "reasoning_accept_len": 3.59,
+   "answer_tokens": 10028,
+   "answer_accept_len": 3.16,
+   "reasoning_share": 0.785
+  }
+ },
+ "results": [
+  {
+   "completion_tokens": 6000,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 5999,
+    "chunks": 1448,
+    "accept_len": 4.14,
+    "tok_s": 54.6,
+    "head": "Let me solve this step-by-step in Welsh.\n\nWe have 5 houses in a row, each a different color: coch (red), gwyrdd (green),"
+   },
+   "answer": {
+    "tokens": 0,
+    "chunks": 0,
+    "accept_len": null,
+    "tok_s": null,
+    "head": ""
+   },
+   "lang": "cy",
+   "kind": "logic"
+  },
+  {
+   "completion_tokens": 2373,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 1940,
+    "chunks": 426,
+    "accept_len": 4.55,
+    "tok_s": 61.1,
+    "head": "Let me work through this step by step.\n\n**First train:**\n- Leaves Cardiff at 09:40\n- Travels 212 km at 80 km/h\n- Stops f"
+   },
+   "answer": {
+    "tokens": 430,
+    "chunks": 108,
+    "accept_len": 3.98,
+    "tok_s": 55.7,
+    "head": "# Cyfrifo Cychod y Dwy Drên\n\n## Drên 1 (gyda stop)\n\n| Rhann | Pellter | Cyflymder | Amser |\n|-------|---------|---------"
+   },
+   "lang": "cy",
+   "kind": "math"
+  },
+  {
+   "completion_tokens": 893,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 207,
+    "chunks": 46,
+    "accept_len": 4.5,
+    "tok_s": 61.4,
+    "head": "The user is asking in Welsh about a bug in a Python function. Let me analyze the code and respond in Welsh.\n\nThe functio"
+   },
+   "answer": {
+    "tokens": 683,
+    "chunks": 203,
+    "accept_len": 3.36,
+    "tok_s": 45.1,
+    "head": "# Dadansoddi'r Namau\n\n## Cod Gwreiddiol (gyda namau wedi'u hamlinellu)\n\n```python\ndef cyfartaledd(rhestr):\n    cyfanswm "
+   },
+   "lang": "cy",
+   "kind": "debug"
+  },
+  {
+   "completion_tokens": 6000,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 3528,
+    "chunks": 1196,
+    "accept_len": 2.95,
+    "tok_s": 39.7,
+    "head": "The user is asking me to organize a one-day conference for 120 people with three parallel sessions, two breaks, and lunc"
+   },
+   "answer": {
+    "tokens": 2471,
+    "chunks": 985,
+    "accept_len": 2.51,
+    "tok_s": 34.3,
+    "head": "# 🗓️ Amserlen Cynhadledd Undydd – 120 o Ddeuddeudolion\n\n## Prif Broblem\n\n| | Nifer | Capasiti |\n|---|---|---|\n| Presenol"
+   },
+   "lang": "cy",
+   "kind": "plan"
+  },
+  {
+   "completion_tokens": 6000,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 5999,
+    "chunks": 1672,
+    "accept_len": 3.59,
+    "tok_s": 47.4,
+    "head": "Let me work through this step by step.\n\nWe have 5 houses in a row, numbered 1 to 5 from left to right.\nColors: rouge (re"
+   },
+   "answer": {
+    "tokens": 0,
+    "chunks": 0,
+    "accept_len": null,
+    "tok_s": null,
+    "head": ""
+   },
+   "lang": "fr",
+   "kind": "logic"
+  },
+  {
+   "completion_tokens": 3951,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 3353,
+    "chunks": 714,
+    "accept_len": 4.7,
+    "tok_s": 62.7,
+    "head": "Let me calculate the arrival time for each train.\n\n**Train 1:**\n- Departs Lyon at 9h40\n- First segment: 212 km at 80 km/"
+   },
+   "answer": {
+    "tokens": 595,
+    "chunks": 111,
+    "accept_len": 5.36,
+    "tok_s": 74.0,
+    "head": "# Comparaison des deux trains\n\n## Train 1 — Départ à 9 h 40\n\n### Segment 1 : 212 km à 80 km/h\n$$t_1 = \\frac{212}{80} = 2"
+   },
+   "lang": "fr",
+   "kind": "math"
+  },
+  {
+   "completion_tokens": 483,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 53,
+    "chunks": 12,
+    "accept_len": 4.42,
+    "tok_s": 64.7,
+    "head": "The bug is that `range(1, len(liste))` starts at index 1 instead of index 0, so it skips the first element of the list. "
+   },
+   "answer": {
+    "tokens": 427,
+    "chunks": 114,
+    "accept_len": 3.75,
+    "tok_s": 52.5,
+    "head": "## Bug identifié\n\n### 1. Le bug principal : `range(1, len(liste))`\n\nL'indice de départ est **1 au lieu de 0**, ce qui si"
+   },
+   "lang": "fr",
+   "kind": "debug"
+  },
+  {
+   "completion_tokens": 6000,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 3925,
+    "chunks": 1349,
+    "accept_len": 2.91,
+    "tok_s": 38.7,
+    "head": "The user is organizing a one-day conference for 120 people with:\n- 3 parallel sessions\n- 2 coffee breaks\n- 1 lunch\n- 3 r"
+   },
+   "answer": {
+    "tokens": 2073,
+    "chunks": 590,
+    "accept_len": 3.51,
+    "tok_s": 46.1,
+    "head": "# Conférence d'une journée — 120 participants, 3 salles (60/40/30)\n\n## 1. Analyse des contraintes\n\n| Élément | Réalité |"
+   },
+   "lang": "fr",
+   "kind": "plan"
+  },
+  {
+   "completion_tokens": 6000,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 5999,
+    "chunks": 1755,
+    "accept_len": 3.42,
+    "tok_s": 45.1,
+    "head": "Let me work through this step by step.\n\nPositions: 1, 2, 3, 4, 5 (left to right)\n\nClues:\n1. The red house is immediately"
+   },
+   "answer": {
+    "tokens": 0,
+    "chunks": 0,
+    "accept_len": null,
+    "tok_s": null,
+    "head": ""
+   },
+   "lang": "en",
+   "kind": "logic"
+  },
+  {
+   "completion_tokens": 3054,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 2568,
+    "chunks": 633,
+    "accept_len": 4.06,
+    "tok_s": 54.7,
+    "head": "**Train 1:**\n\nLeg 1: 212 km at 80 km/h\nTime = 212/80 = 2.65 hours = 2 hours 39 minutes\nDeparture: 09:40\nArrives at end o"
+   },
+   "answer": {
+    "tokens": 483,
+    "chunks": 89,
+    "accept_len": 5.43,
+    "tok_s": 75.1,
+    "head": "# Train Arrival Comparison\n\n## Train 1 (Departs 09:40)\n\n**Leg 1:** 212 km at 80 km/h\n$$t_1 = \\frac{212}{80} = 2.65\\text{"
+   },
+   "lang": "en",
+   "kind": "math"
+  },
+  {
+   "completion_tokens": 583,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 46,
+    "chunks": 13,
+    "accept_len": 3.54,
+    "tok_s": 51.0,
+    "head": "The function has a bug in the loop: `range(1, len(items))` starts at index 1 instead of index 0, so it skips the first e"
+   },
+   "answer": {
+    "tokens": 534,
+    "chunks": 134,
+    "accept_len": 3.99,
+    "tok_s": 51.3,
+    "head": "## The Bug: Off-by-One Error in `range()`\n\n```python\ndef average(items):\n    total = 0\n    for i in range(1, len(items))"
+   },
+   "lang": "en",
+   "kind": "debug"
+  },
+  {
+   "completion_tokens": 5234,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 2900,
+    "chunks": 922,
+    "accept_len": 3.15,
+    "tok_s": 41.9,
+    "head": "The user wants a one-day conference schedule for 120 people with three parallel sessions, two breaks, and lunch. They ha"
+   },
+   "answer": {
+    "tokens": 2332,
+    "chunks": 840,
+    "accept_len": 2.78,
+    "tok_s": 36.7,
+    "head": "# One-Day Conference Schedule for 120 People (3 Rooms: 60 / 40 / 30 Seats)\n\n---\n\n## The Core Numbers Problem\n\n| | Seats "
+   },
+   "lang": "en",
+   "kind": "plan"
+  }
+ ]
+}

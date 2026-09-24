@@ -55,6 +55,7 @@ fi
 [ "${CUDA_GRAPH_PREFILL:-0}" = 1 ] || args+=(--disable-prefill-cuda-graph)
 # Unified memory: page cache from reading the shards competes with the KV pool.
 [ "${DROP_CACHE_AFTER_LOAD:-1}" = 1 ] && args+=(--weight-loader-drop-cache-after-load)
+[ -n "${FP8_GEMM_BACKEND:-}" ] && args+=(--fp8-gemm-backend "$FP8_GEMM_BACKEND")
 [ -n "${PREFILL_ATTN_BACKEND:-}" ] && args+=(--prefill-attention-backend "$PREFILL_ATTN_BACKEND")
 [ -n "${KV_CACHE_DTYPE:-}" ] && args+=(--kv-cache-dtype "$KV_CACHE_DTYPE")
 [ -n "${MAX_TOTAL_TOKENS:-}" ] && args+=(--max-total-tokens "$MAX_TOTAL_TOKENS")

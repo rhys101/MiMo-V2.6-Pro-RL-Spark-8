@@ -1,0 +1,334 @@
+{
+ "summary": {
+  "cy": {
+   "reasoning_tokens": 143,
+   "reasoning_accept_len": 4.61,
+   "answer_tokens": 5532,
+   "answer_accept_len": 1.82,
+   "reasoning_share": 0.025
+  },
+  "fr": {
+   "reasoning_tokens": 140,
+   "reasoning_accept_len": 3.41,
+   "answer_tokens": 3921,
+   "answer_accept_len": 2.35,
+   "reasoning_share": 0.034
+  },
+  "en": {
+   "reasoning_tokens": 131,
+   "reasoning_accept_len": 3.97,
+   "answer_tokens": 3796,
+   "answer_accept_len": 2.27,
+   "reasoning_share": 0.033
+  },
+  "all": {
+   "reasoning_tokens": 414,
+   "reasoning_accept_len": 3.94,
+   "answer_tokens": 13249,
+   "answer_accept_len": 2.08,
+   "reasoning_share": 0.03
+  }
+ },
+ "results": [
+  {
+   "completion_tokens": 475,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 22,
+    "chunks": 6,
+    "accept_len": 3.67,
+    "tok_s": 59.6,
+    "head": "The user is asking me to explain how photosynthesis works in about 200 words, in Welsh."
+   },
+   "answer": {
+    "tokens": 450,
+    "chunks": 237,
+    "accept_len": 1.9,
+    "tok_s": 27.1,
+    "head": "# Ffotosynthesis\n\nFfotosynthesis yw'r broses y mae planhigion, algâu a rhai bacteria yn ei defnyddio i droi golau solar "
+   },
+   "lang": "cy",
+   "kind": "explain"
+  },
+  {
+   "completion_tokens": 1645,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 39,
+    "chunks": 9,
+    "accept_len": 4.33,
+    "tok_s": 66.7,
+    "head": "The user is asking me to write a short story in Welsh about a fisherman in Aberystwyth who finds a message in a bottle. "
+   },
+   "answer": {
+    "tokens": 1602,
+    "chunks": 1110,
+    "accept_len": 1.44,
+    "tok_s": 20.9,
+    "head": "# Neges o'r Traeth\n\nRoedd Dewi'n pysgota ar y sbont yn Aberystwyth fore Saboth tawel ym mis Hydref. Roedd y môr yn esmwy"
+   },
+   "lang": "cy",
+   "kind": "story"
+  },
+  {
+   "completion_tokens": 1612,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 27,
+    "chunks": 5,
+    "accept_len": 5.4,
+    "tok_s": 88.5,
+    "head": "The user is asking in Welsh about the advantages and disadvantages of offshore wind energy for Wales. Let me provide a c"
+   },
+   "answer": {
+    "tokens": 1582,
+    "chunks": 866,
+    "accept_len": 1.83,
+    "tok_s": 25.6,
+    "head": "# Ynni Gwynt ar y Môr yng Nghymru: Manteision ac Anfanteision\n\n## 🟢 Manteision\n\n### Amgylcheddol\n- **Lleihau allyriadau "
+   },
+   "lang": "cy",
+   "kind": "argue"
+  },
+  {
+   "completion_tokens": 1151,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 25,
+    "chunks": 4,
+    "accept_len": 6.25,
+    "tok_s": 110.1,
+    "head": "The user is asking me to write a Python function that checks if a word is a palindrome, with an explanation in Welsh."
+   },
+   "answer": {
+    "tokens": 1122,
+    "chunks": 422,
+    "accept_len": 2.66,
+    "tok_s": 36.8,
+    "head": "# Gwiriwr Palindrom yn Python\n\nDyma swyddogaeth Python sy'n gwirio a yw gair yn **balindrom** (gair sy'n darllen yr un f"
+   },
+   "lang": "cy",
+   "kind": "code"
+  },
+  {
+   "completion_tokens": 809,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 30,
+    "chunks": 7,
+    "accept_len": 4.29,
+    "tok_s": 66.9,
+    "head": "The user is asking me to give advice to someone who is starting to learn Welsh. They're asking in Welsh, so I should res"
+   },
+   "answer": {
+    "tokens": 776,
+    "chunks": 402,
+    "accept_len": 1.93,
+    "tok_s": 27.2,
+    "head": "# Cyngor i Ddechreuwyr Cymraeg 🏴󠁧󠁢󠁷󠁬󠁳󠁿\n\nCroeso i'ch taith ddysgu Cymraeg! Dyma rai awgrymiadau defnyddiol:\n\n## 1. **Dech"
+   },
+   "lang": "cy",
+   "kind": "advice"
+  },
+  {
+   "completion_tokens": 411,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 23,
+    "chunks": 6,
+    "accept_len": 3.83,
+    "tok_s": 60.9,
+    "head": "The user is asking me to explain how photosynthesis works, in approximately 200 words, in French."
+   },
+   "answer": {
+    "tokens": 385,
+    "chunks": 131,
+    "accept_len": 2.94,
+    "tok_s": 42.4,
+    "head": "## La photosynthèse\n\nLa photosynthèse est le processus par lequel les plantes, algues et certaines bactéries convertisse"
+   },
+   "lang": "fr",
+   "kind": "explain"
+  },
+  {
+   "completion_tokens": 928,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 38,
+    "chunks": 11,
+    "accept_len": 3.45,
+    "tok_s": 50.9,
+    "head": "The user wants me to write a short story in French about a Breton fisherman who finds a message in a bottle. Let me writ"
+   },
+   "answer": {
+    "tokens": 887,
+    "chunks": 506,
+    "accept_len": 1.75,
+    "tok_s": 25.4,
+    "head": "# Le message de la mer\n\nLe vent soufflait fort sur la côte de Plouha, charriant l'odeur âcre du sel et du varech. Yann L"
+   },
+   "lang": "fr",
+   "kind": "story"
+  },
+  {
+   "completion_tokens": 1213,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 31,
+    "chunks": 9,
+    "accept_len": 3.44,
+    "tok_s": 51.8,
+    "head": "The user is asking about the advantages and disadvantages of offshore wind energy for France. Let me provide a comprehen"
+   },
+   "answer": {
+    "tokens": 1179,
+    "chunks": 521,
+    "accept_len": 2.26,
+    "tok_s": 32.3,
+    "head": "# Énergie éolienne en mer : avantages et inconvénients pour la France\n\n## ✅ Avantages\n\n### Ressource et production\n- **V"
+   },
+   "lang": "fr",
+   "kind": "argue"
+  },
+  {
+   "completion_tokens": 757,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 21,
+    "chunks": 5,
+    "accept_len": 4.2,
+    "tok_s": 69.2,
+    "head": "The user wants a Python function to check if a word is a palindrome, with an explanation in French."
+   },
+   "answer": {
+    "tokens": 733,
+    "chunks": 211,
+    "accept_len": 3.47,
+    "tok_s": 49.5,
+    "head": "# Vérifier si un mot est un palindrome en Python\n\n## Code\n\n```python\ndef est_palindrome(mot: str) -> bool:\n    \"\"\"Vérifi"
+   },
+   "lang": "fr",
+   "kind": "code"
+  },
+  {
+   "completion_tokens": 768,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 27,
+    "chunks": 10,
+    "accept_len": 2.7,
+    "tok_s": 27.2,
+    "head": "The user is asking me to give advice to someone who is starting to learn French. I'll provide practical and encouraging "
+   },
+   "answer": {
+    "tokens": 737,
+    "chunks": 296,
+    "accept_len": 2.49,
+    "tok_s": 35.7,
+    "head": "# Conseils pour commencer à apprendre le français 🇫🇷\n\n## 1. 📚 Maîtrisez les bases\n- **L'alphabet et la prononciation** :"
+   },
+   "lang": "fr",
+   "kind": "advice"
+  },
+  {
+   "completion_tokens": 294,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 17,
+    "chunks": 3,
+    "accept_len": 5.67,
+    "tok_s": 109.2,
+    "head": "The user wants a concise explanation of photosynthesis in about 200 words."
+   },
+   "answer": {
+    "tokens": 274,
+    "chunks": 92,
+    "accept_len": 2.98,
+    "tok_s": 42.4,
+    "head": "## How Photosynthesis Works\n\nPhotosynthesis is the process by which plants, algae, and some bacteria convert light energ"
+   },
+   "lang": "en",
+   "kind": "explain"
+  },
+  {
+   "completion_tokens": 1350,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 45,
+    "chunks": 11,
+    "accept_len": 4.09,
+    "tok_s": 60.9,
+    "head": "The user wants a short story about a fisherman in Cornwall who finds a message in a bottle. Let me write something evoca"
+   },
+   "answer": {
+    "tokens": 1302,
+    "chunks": 713,
+    "accept_len": 1.83,
+    "tok_s": 25.6,
+    "head": "# The Bottle\n\nTom Cardew had fished the waters off Penzance for thirty-seven years, and in all that time the sea had giv"
+   },
+   "lang": "en",
+   "kind": "story"
+  },
+  {
+   "completion_tokens": 925,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 25,
+    "chunks": 6,
+    "accept_len": 4.17,
+    "tok_s": 65.1,
+    "head": "The user is asking about the advantages and disadvantages of offshore wind power specifically for the UK. Let me provide"
+   },
+   "answer": {
+    "tokens": 897,
+    "chunks": 418,
+    "accept_len": 2.15,
+    "tok_s": 29.7,
+    "head": "# Offshore Wind Power in the UK: Advantages and Disadvantages\n\n## Advantages\n\n**Resource & Generation**\n- The UK has som"
+   },
+   "lang": "en",
+   "kind": "argue"
+  },
+  {
+   "completion_tokens": 682,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 20,
+    "chunks": 5,
+    "accept_len": 4.0,
+    "tok_s": 64.4,
+    "head": "The user wants a Python function to check if a word is a palindrome, along with an explanation."
+   },
+   "answer": {
+    "tokens": 659,
+    "chunks": 161,
+    "accept_len": 4.09,
+    "tok_s": 56.7,
+    "head": "# Palindrome Checker in Python\n\n## What is a Palindrome?\n\nA **palindrome** is a word, phrase, or number that reads the s"
+   },
+   "lang": "en",
+   "kind": "code"
+  },
+  {
+   "completion_tokens": 691,
+   "usage_reasoning_tokens": 0,
+   "reasoning": {
+    "tokens": 24,
+    "chunks": 8,
+    "accept_len": 3.0,
+    "tok_s": 46.4,
+    "head": "The user is asking for advice for someone starting to learn Spanish. Let me give comprehensive, practical, and encouragi"
+   },
+   "answer": {
+    "tokens": 664,
+    "chunks": 287,
+    "accept_len": 2.31,
+    "tok_s": 31.2,
+    "head": "# Advice for Starting to Learn Spanish 🇪🇸\n\n## 🏗️ Build a Strong Foundation\n- **Learn the alphabet and pronunciation firs"
+   },
+   "lang": "en",
+   "kind": "advice"
+  }
+ ]
+}

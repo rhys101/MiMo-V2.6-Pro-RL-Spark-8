@@ -14,27 +14,34 @@ OpenAI-compatible API.
 
 ## Performance
 
-Measured **23 September 2026** on build `a6` (TP8 · EP1 · Marlin W4A16 MoE ·
-DFlash-8 · RoCEnante all-reduce · FA4 prefill). Benchmark prompts and metrics are
-identical to the [DeepSeek V4.1 Flash deployment](https://github.com/rhys101/DeepSeek-V4.1-Flash-vLLM-DGX-Spark-8)
+Measured **24 September 2026** on build `a9` (TP8 · EP1 · Marlin W4A16 MoE ·
+DFlash-8 · RoCEnante all-reduce · FA4 prefill · FP8 `o_proj` and DFlash draft ·
+GB10-tuned FP8 GEMM tiles). Benchmark prompts and metrics are identical to the
+[DeepSeek V4.1 Flash deployment](https://github.com/rhys101/DeepSeek-V4.1-Flash-vLLM-DGX-Spark-8)
 (`bench/mimobench.py`, temperature 0, thinking off).
 
-| Per-stream decode tok/s | C1 | C2 | C4 | C8 |
+| Per-stream decode tok/s | C1 | C8 | a6 C1 | a6 C8 |
 |---|---:|---:|---:|---:|
-| coding | **91.4** | 67.0 | 46.3 | 40.1 |
-| json | 68.2 | 61.7 | 42.9 | 30.2 |
-| math | 78.8 | 66.4 | 53.3 | 36.0 |
-| format | 107.0 | 82.0 | 60.7 | 43.2 |
-| reasoning | 49.2 | 36.7 | 23.4 | 18.0 |
-| summary | 34.3 | 29.2 | 21.2 | 14.9 |
-| prose | 32.3 | 23.4 | 16.9 | 11.9 |
-| narrative | 26.3 | 19.3 | 14.6 | 9.4 |
-| **all 8 categories, aggregate** | 52.9 | 82.3 | 119.0 | **171.1** |
+| format | **111.2** | 45.8 | 107.0 | 43.2 |
+| coding | 88.9 | 41.3 | 91.4 | 40.1 |
+| math | 87.9 | 33.8 | 78.8 | 36.0 |
+| json | 67.1 | 29.0 | 68.2 | 30.2 |
+| reasoning | 58.8 | 19.2 | 49.2 | 18.0 |
+| summary | 41.8 | 15.4 | 34.3 | 14.9 |
+| prose | 32.3 | 13.2 | 32.3 | 11.9 |
+| narrative | 28.9 | 10.2 | 26.3 | 9.4 |
+| **mean of 8 categories** | **64.6** | 26.0 | 60.9 | 25.4 |
+| **all 8 categories, aggregate** | 55.5 | **176.5** | 52.9 | 171.1 |
 
-Cold prefill (unique prefix, TTFT-based): **1,899 tok/s** at 5K tokens, 1,629 at 20K,
-1,720 at 81K, 1,515 at 163K.
+Single benchmark requests move ±20–30% between builds because greedy output, and
+with it DFlash acceptance, changes with small numeric differences. Compare the
+means, and the repeatable long-extraction measurement:
 
-Long structured extraction (four CSV→JSON tasks, end to end): **93.3 tok/s**.
+Long structured extraction (four CSV→JSON tasks, cold cache, end to end,
+prefill included): **101.7 tok/s** on a9, 95.0 tok/s on a6.
+
+Cold prefill (unique prefix, TTFT-based, a6): **1,899 tok/s** at 5K tokens, 1,629
+at 20K, 1,720 at 81K, 1,515 at 163K.
 
 Free-form prose is where DFlash's draft is weakest. The EAGLE-MTP profile
 (`SPEC_ALGO=EAGLE`, 3 steps × 4 tokens) trades structured speed for prose:
@@ -46,7 +53,7 @@ prose 35.0 / narrative 36.5 tok/s at C1, but coding 63.1.
 | Check | Result |
 |---|---|
 | Smoke: arithmetic, reasoning split, tool call, image (red/blue halves) | pass on every build |
-| GSM8K, first 200 test questions, greedy, thinking off | **96.5%** (a6), 97.0% (a4-marlin, a5-eagle) |
+| GSM8K, first 200 test questions, greedy, thinking off | **97.5%** (a9, a7), 96.5% (a6), 97.0% (a4-marlin, a5-eagle) |
 | Needle retrieval, 3 facts | pass at 127,803 tokens (a5, a6) and 244,168 tokens (a5) |
 | Mixed workload: 300-integer JSON-schema generation + 3 short requests + forced tool call admitted mid-decode, ×3 | 3/3 pass (a5 EAGLE, a6 DFlash) |
 | Model copy | identical sha256 manifest (155 files) on all 8 nodes |
@@ -57,16 +64,20 @@ long unattended reliability. Audio/video input is not validated.
 
 ## Where the time goes
 
-Decode, one DFlash verify step (8 tokens), rank 0, Marlin EP1 (`runtime/profile_decode.sh`):
+Decode, one DFlash verify step (8 tokens), rank 0, a9 (`runtime/profile_decode.sh`).
+The real step is ~70 ms; GPU idle time is under 1% (`runtime/trace_gaps.py`).
 
 | | ms/step | share |
 |---|---:|---:|
-| Marlin MXFP4 MoE | 35.5 | 42% — memory bound (~59 distinct experts/layer, ~10 GB/rank/step) |
-| BF16 GEMMs (`o_proj`, lm_head, draft) | 17.1 | 20% |
-| RoCEnante all-reduce (151/step) | 9.5 | 11% |
-| FP8 block `qkv` (Triton) | 7.6 | 9% |
-| attention | 2.9 | 3% |
-| host gaps (GPU idle) | ~8 | 10% |
+| Marlin MXFP4 MoE | 35.7 | 52% — memory bound (~59 distinct experts/layer, ~10 GB/rank/step) |
+| FP8 block GEMMs (`qkv`, `o_proj`, draft) | 13.6 | 20% |
+| RoCEnante all-reduce (151/step) | 9.8 | 14% |
+| BF16 GEMMs (lm_head, remaining draft and dense) | 5.4 | 8% |
+| attention, norms, other | 3.1 | 5% |
+
+Against a6, FP8 `o_proj` and FP8 draft weights take the BF16/FP8 GEMM share from
+24.3 to 19.0 ms per step. MoE only gets cheaper with fewer verified tokens or
+fewer bits per expert.
 
 Prefill is bound by the fabric (ring all-reduce tops out at ~23.5 GB/s bus
 bandwidth over 2 × 200G; ~32%) and Marlin at large M (~34%).
@@ -111,8 +122,11 @@ Boot takes 12–14 minutes, mostly weight loading.
 ## What is in the image
 
 Pinned base `lmsysorg/sglang` dev-cu13 (sglang `06008c17`, which carries MiMo-V2.6
-day-0 support, sglang#40448) plus nine patches: six open upstream PRs, the
-RoCEnante all-reduce hook ported from the DeepSeek build, and two local fixes.
+day-0 support, sglang#40448) plus ten patches: six open upstream PRs, the
+RoCEnante all-reduce hook ported from the DeepSeek build, and three local changes
+(fast expert load, Marlin zero-fill skip, optional FP8 serving of BF16 linears).
+It also carries Triton block-FP8 tile tables tuned on GB10 for MiMo's per-rank
+shapes (`patches/fp8-configs/`).
 See [patches/README.md](patches/README.md) and [versions.lock.json](versions.lock.json).
 
 ## Credits and licenses
